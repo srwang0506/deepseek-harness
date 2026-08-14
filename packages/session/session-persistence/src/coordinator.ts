@@ -199,6 +199,15 @@ export interface PersistenceBackend<TornMarker = unknown> {
   list(signal?: AbortSignal): Promise<SessionHeader[]>
 
   /**
+   * Durably remove one stored session's complete artifact (header, events,
+   * and any backend-owned metadata). Backends without per-session deletion
+   * omit this hook; the coordinator then refuses `delete`.
+   * @param meta - the stored session's header; backends use it to locate
+   *   the artifact (the JSONL project directory derives from `cwd`).
+   */
+  deleteStored?(meta: SessionHeader): Promise<void>
+
+  /**
    * Optional side-effect-free artifact locator, used to point refusal
    * diagnostics ({@link SessionFormatUnsupportedError}) at the raw log.
    * Backends without one artifact per session omit it or return `undefined`.
@@ -836,6 +845,31 @@ export class PersistenceCoordinator<TornMarker = unknown> {
     const retired = Promise.resolve(this.retirements.get(id))
     const waited = signal === undefined ? retired : observeQueuedAbort(retired, signal, () => false)
     return waited.then(() => this.serialize(id, () => this.readFromCore(id, fromSeq, signal), signal))
+  }
+
+  /**
+   * Durably remove one stored session: its complete artifact and every
+   * coordinator-side record. A live session cannot be deleted; dispose it
+   * first. Backends without a `delete` hook refuse loudly.
+   * @param id - persisted session id to remove.
+   * @returns completion after the backend removal is durable.
+   */
+  delete(id: SessionId): Promise<void> {
+    return this.serialize(id, () => this.deleteCore(id))
+  }
+
+  private async deleteCore(id: SessionId): Promise<void> {
+    for (const session of this.live.keys()) {
+      if (session.id === id) throw new Error(`session "${id}" is live; dispose it before deleting`)
+    }
+    if (this.backend.deleteStored === undefined) {
+      throw new Error('the persistence backend does not support session deletion')
+    }
+    this.preparations.invalidate(id)
+    const stored = await this.backend.loadStored(id)
+    const meta = this.states.get(id)?.meta ?? stored?.meta
+    if (meta !== undefined) await this.backend.deleteStored(meta)
+    this.states.delete(id)
   }
 
   private async readFromCore(

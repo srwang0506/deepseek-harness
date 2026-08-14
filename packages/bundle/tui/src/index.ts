@@ -69,6 +69,8 @@ export interface Config {
   output: 'text' | 'json' | 'jsonl'
   /** Image files attached to the first user message (png/jpeg/webp/gif). */
   images: string[]
+  /** Delete the persisted session after a one-shot run. */
+  ephemeral: boolean
 }
 
 export const Config: z<Config> = z.object({
@@ -78,6 +80,7 @@ export const Config: z<Config> = z.object({
   model: z.string().default(''),
   output: z.union([z.const('text'), z.const('json'), z.const('jsonl')]).default('text'),
   images: z.array(z.string()).default([]),
+  ephemeral: z.boolean().default(false),
 })
 
 /** The process streams the runner reads/writes; tests substitute captures. */
@@ -211,6 +214,10 @@ async function runOneShot(ctx: Context, config: Config, exit: (code: number) => 
   }
   disposeStream?.()
   await handle.dispose()
+  if (config.ephemeral) {
+    const persistence = ctx.get('sessionPersistence')
+    if (persistence !== undefined) await persistence.delete(SessionId(agent.id))
+  }
   exit(reason?.kind === 'completed' ? 0 : 1)
 }
 
@@ -238,6 +245,7 @@ function helpText(): string {
     '  /logout           remove the OpenAI GPT credential',
     '  /sessions         list persisted sessions',
     '  /fork             fork the current session from its latest event',
+    '  /delete [id]      delete a persisted session',
     '  /status           show model, session, cwd, and login state',
     '  /compact          compact the session history',
     '  /init             write an AGENTS.md template',
@@ -508,7 +516,7 @@ function registerCustomCommands(ctx: Context): void {
 
 /** The built-in slash-command names plus every registry command. */
 function slashNames(ctx: Context, agent: Agent): string[] {
-  const names = new Set(['new', 'fork', 'resume', 'model', 'login', 'logout', 'sessions', 'status', 'compact', 'init', 'doctor', 'export', 'diff', 'review', 'undo', 'help', 'quit'])
+  const names = new Set(['new', 'fork', 'delete', 'resume', 'model', 'login', 'logout', 'sessions', 'status', 'compact', 'init', 'doctor', 'export', 'diff', 'review', 'undo', 'help', 'quit'])
   const commands = ctx.get('commands')
   if (commands !== undefined) {
     for (const descriptor of commands.list(agent)) names.add(descriptor.name)
@@ -761,6 +769,29 @@ async function runInteractive(ctx: Context, config: Config, exit: (code: number)
           await adopt()
           refreshStatus()
           store.push({ kind: 'info', text: `forked ${child.id} from ${parentId}` })
+          return
+        }
+        case 'delete': {
+          const id = slash.args.trim()
+          if (id === '') {
+            store.push({ kind: 'error', text: '/delete needs a session id (see /sessions)' })
+            return
+          }
+          if (id === agent.id) {
+            store.push({ kind: 'error', text: 'cannot delete the live session; run /new first' })
+            return
+          }
+          const persistence = ctx.get('sessionPersistence')
+          if (persistence === undefined) {
+            store.push({ kind: 'error', text: 'session persistence is not mounted' })
+            return
+          }
+          try {
+            await persistence.delete(SessionId(id))
+            store.push({ kind: 'info', text: `deleted session ${id}` })
+          } catch (error) {
+            store.push({ kind: 'error', text: error instanceof Error ? error.message : String(error) })
+          }
           return
         }
         case 'resume': {

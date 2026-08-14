@@ -349,6 +349,29 @@ export class SqliteSessionPersistence extends SessionPersistence implements Pers
     return rows.map(rowToMeta)
   }
 
+  delete(id: SessionId): Promise<void> {
+    return this.coordinator.delete(id)
+  }
+
+  /**
+   * Durably remove one stored session's rows (header and every event) in one
+   * transaction.
+   * @param meta - the stored session header; only its id is needed.
+   */
+  async deleteStored(meta: SessionHeader): Promise<void> {
+    await this.ready
+    this.db.exec('BEGIN')
+    try {
+      this.db.prepare('DELETE FROM events WHERE session_id = ?').run(meta.id)
+      this.db.prepare('DELETE FROM sessions WHERE id = ?').run(meta.id)
+      this.db.exec('COMMIT')
+    } catch (error) {
+      /* v8 ignore next -- DB-level failure (disk full, etc.), unreachable in test */
+      this.db.exec('ROLLBACK')
+      throw error
+    }
+  }
+
   /** List metadata with a source-qualified monotonic revision per session. */
   async listSnapshots(signal?: AbortSignal): Promise<SessionPersistenceSnapshot[]> {
     signal?.throwIfAborted()

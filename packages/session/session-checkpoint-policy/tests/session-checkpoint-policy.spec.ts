@@ -13,6 +13,11 @@ import * as checkpointPolicy from '../src/index.ts'
 const contexts: Context[] = []
 
 class TestPersistence extends SessionPersistence {
+
+  // Test double: deletion is never exercised by these suites.
+  delete(_id: SessionId): Promise<void> {
+    return Promise.reject(new Error('delete is not supported by this test persistence'))
+  }
   override readonly supportsRawArtifacts = false
 
   locate(_meta: SessionHeader): undefined { return undefined }

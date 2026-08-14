@@ -33,6 +33,8 @@ export interface TuiStartupValues {
   output: 'text' | 'json' | 'jsonl'
   /** Image files attached to the first user message. */
   images: string[]
+  /** Delete the persisted session after a one-shot run. */
+  ephemeral: boolean
 }
 
 /** The flag family as commander parsed it. */
@@ -43,6 +45,7 @@ interface TuiOptions {
   json?: boolean
   jsonl?: boolean
   image?: string[]
+  ephemeral?: boolean
 }
 
 /** Repeatable single-value collector: `--image a.png --image b.png`. */
@@ -64,6 +67,7 @@ function tuiCommand(): Command {
     .option('--json', 'one-shot: print one JSON result object on stdout')
     .option('--jsonl', 'one-shot: stream session events as JSON lines')
     .option('-i, --image <path>', 'attach an image file (png/jpeg/webp/gif; repeatable)', collectImages, [])
+    .option('--ephemeral', 'one-shot: delete the persisted session after the run')
     .addHelpText('after', `
 Examples:
   dsh                              start an interactive session
@@ -124,6 +128,7 @@ export function apply(ctx: Context): void {
       model: options.model ?? '',
       output: options.jsonl === true ? 'jsonl' : options.json === true ? 'json' : 'text',
       images: options.image ?? [],
+      ephemeral: options.ephemeral === true,
     } satisfies TuiStartupValues)
   })
   parseCmdline(ctx, program)

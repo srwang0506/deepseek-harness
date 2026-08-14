@@ -50,6 +50,7 @@ export const apply = ctx => globalThis.__tuiStartupApply(ctx)
     '    model: !!js ctx.tuiStartup.model ?? \'\'',
     '    output: !!js ctx.tuiStartup.output ?? \'text\'',
     '    images: !!js ctx.tuiStartup.images ?? []',
+    '    ephemeral: !!js ctx.tuiStartup.ephemeral ?? false',
     '- id: tui-startup',
     `  name: ${pathToFileURL(join(dir, 'startup.mjs')).href}`,
     '',
@@ -80,14 +81,14 @@ export const apply = ctx => globalThis.__tuiStartupApply(ctx)
 describe('tui command-line provider', () => {
   it('publishes the parsed invocation to the runner', async () => {
     const { startup, observed } = await bootStartup(['run', 'the', 'tests'])
-    expect(startup).toEqual({ task: 'run the tests', resumeSessionId: '', continue: false, model: '', output: 'text', images: [] })
-    expect(observed.runnerConfig).toEqual({ task: 'run the tests', resumeSessionId: '', continue: false, model: '', output: 'text', images: [] })
+    expect(startup).toEqual({ task: 'run the tests', resumeSessionId: '', continue: false, model: '', output: 'text', images: [], ephemeral: false })
+    expect(observed.runnerConfig).toEqual({ task: 'run the tests', resumeSessionId: '', continue: false, model: '', output: 'text', images: [], ephemeral: false })
     expect(observed.exits).toEqual([])
   })
 
   it('publishes the resume and model flags', async () => {
     const { startup } = await bootStartup(['--resume', 'abc', '-m', 'deepseek-chat'])
-    expect(startup).toEqual({ task: '', resumeSessionId: 'abc', continue: false, model: 'deepseek-chat', output: 'text', images: [] })
+    expect(startup).toEqual({ task: '', resumeSessionId: 'abc', continue: false, model: 'deepseek-chat', output: 'text', images: [], ephemeral: false })
   })
 
   it('publishes the json and jsonl output flags', async () => {

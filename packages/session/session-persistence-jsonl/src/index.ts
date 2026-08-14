@@ -448,6 +448,19 @@ export class JsonlSessionPersistence extends SessionPersistence implements Persi
     return (await this.listArtifacts(signal)).map(artifact => artifact.header)
   }
 
+  delete(id: SessionId): Promise<void> {
+    return this.coordinator.delete(id)
+  }
+
+  /**
+   * Durably remove one stored session's complete artifact directory.
+   * @param meta - the stored session header; its `cwd` selects the project directory.
+   */
+  async deleteStored(meta: SessionHeader): Promise<void> {
+    const dir = sessionDir(this.root, meta.cwd, meta.id)
+    await rm(dir, { recursive: true, force: true })
+  }
+
   /** List metadata plus a stat-derived identity for each append-only log. */
   async listSnapshots(signal?: AbortSignal): Promise<SessionPersistenceSnapshot[]> {
     const snapshots: SessionPersistenceSnapshot[] = []

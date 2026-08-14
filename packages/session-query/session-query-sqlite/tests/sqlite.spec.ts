@@ -67,6 +67,11 @@ function replaceCursorOffset(
 }
 
 class TestPersistence extends SessionPersistence {
+
+  // Test double: deletion is never exercised by these suites.
+  delete(_id: SessionId): Promise<void> {
+    return Promise.reject(new Error('delete is not supported by this test persistence'))
+  }
   override readonly supportsRawArtifacts = false
 
   static entries = new Map<SessionIdType, { meta: SessionHeader; events: SessionEvent[] }>()

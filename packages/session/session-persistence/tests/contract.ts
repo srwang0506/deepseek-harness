@@ -277,6 +277,24 @@ export function runPersistenceContract(name: string, make: () => Promise<Contrac
       }
     })
 
+    it('delete() removes a stored session and leaves the listing without it', async () => {
+      const { persistence, dispose } = await make()
+      try {
+        const m = meta('sdel', '/work')
+        await persistence.create(m)
+        await persistence.append(m.id, oneTurnLog())
+        expect((await persistence.list()).map(x => x.id)).toContain(SessionId('sdel'))
+
+        await persistence.delete(m.id)
+
+        expect((await persistence.list()).map(x => x.id)).not.toContain(SessionId('sdel'))
+        expect((await persistence.listSnapshots()).map(snapshot => snapshot.header.id))
+          .not.toContain(SessionId('sdel'))
+      } finally {
+        await dispose()
+      }
+    })
+
     it('rejects pre-aborted observation reads with the exact cancellation reason', async () => {
       const { persistence, dispose } = await make()
       try {
