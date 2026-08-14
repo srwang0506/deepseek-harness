@@ -34,6 +34,8 @@ import type {} from '@deepseek-ai/dsh-session-persistence'
 import type {} from '@deepseek-ai/dsh-commands'
 import type {} from '@deepseek-ai/dsh-permission-presets'
 import type {} from '@deepseek-ai/dsh-plan-mode'
+import { loginOpenAi, logoutOpenAi, PiAiCredentialStore } from '@deepseek-ai/dsh-llm-pi-ai'
+import { dshHomePath } from '@deepseek-ai/dsh-home-paths'
 import { parseSlash } from './slash.ts'
 import { diffsFromMeta, plainFileDiffs } from './diff.ts'
 import { extractText, toolCallTitle } from './present.ts'
@@ -41,6 +43,7 @@ import { completeMention, extractMentions, readMention, suggestMentions } from '
 import { loadCustomCommands } from './custom-commands.ts'
 import { UiStore } from './ui/store.ts'
 import { mountApp } from './ui/app.tsx'
+import type { AppCallbacks } from './ui/app.tsx'
 
 /** Stable Cordis plugin name. */
 export const name = 'tui-runner'
@@ -196,8 +199,10 @@ function helpText(): string {
     '  /new              start a fresh session',
     '  /resume [id]      list sessions, or resume the given id',
     '  /model [model]    show the model, or switch it',
+    '  /login [method]   log into OpenAI GPT (browser, device, api-key)',
+    '  /logout           remove the OpenAI GPT credential',
     '  /sessions         list persisted sessions',
-    '  /status           show model, session, and cwd',
+    '  /status           show model, session, cwd, and login state',
     '  /compact          compact the session history',
     '  /init             write an AGENTS.md template',
     '  /doctor           check environment and credentials',
@@ -418,7 +423,7 @@ function registerCustomCommands(ctx: Context): void {
 
 /** The built-in slash-command names plus every registry command. */
 function slashNames(ctx: Context, agent: Agent): string[] {
-  const names = new Set(['new', 'resume', 'model', 'sessions', 'status', 'compact', 'init', 'doctor', 'export', 'diff', 'undo', 'help', 'quit'])
+  const names = new Set(['new', 'resume', 'model', 'login', 'logout', 'sessions', 'status', 'compact', 'init', 'doctor', 'export', 'diff', 'undo', 'help', 'quit'])
   const commands = ctx.get('commands')
   if (commands !== undefined) {
     for (const descriptor of commands.list(agent)) names.add(descriptor.name)
@@ -554,6 +559,17 @@ async function runInteractive(ctx: Context, config: Config, exit: (code: number)
           refreshStatus()
           return
         }
+        case 'login': {
+          const method = slash.args.trim()
+          await suspendSurface(() => loginOpenAi(dshHomePath('pi-ai-auth.json'), method === '' ? undefined : method))
+          refreshStatus()
+          return
+        }
+        case 'logout': {
+          await suspendSurface(() => logoutOpenAi(dshHomePath('pi-ai-auth.json')))
+          refreshStatus()
+          return
+        }
         case 'sessions': {
           const headers = await ctx.get('sessionPersistence')?.list() ?? []
           const rows = headers.filter(h => h.origin !== 'subagent').sort((a, b) => b.createdAt - a.createdAt)
@@ -582,6 +598,16 @@ async function runInteractive(ctx: Context, config: Config, exit: (code: number)
           store.push({ kind: 'info', text: `model ${context?.provider ?? selection.provider}/${context?.model ?? selection.model}` })
           store.push({ kind: 'info', text: `cwd ${process.cwd()}` })
           store.push({ kind: 'info', text: `events ${agent.session.seq}` })
+          const credentials = new PiAiCredentialStore(dshHomePath('pi-ai-auth.json'))
+          const credential = await credentials.read('openai-codex')
+          store.push({
+            kind: 'info',
+            text: credential?.type === 'oauth'
+              ? 'OpenAI 已通过 ChatGPT OAuth 登录'
+              : credential?.type === 'api_key'
+                ? 'OpenAI 已通过 API Key 登录'
+                : 'OpenAI 尚未登录',
+          })
           return
         }
         case 'init': {
@@ -683,7 +709,7 @@ async function runInteractive(ctx: Context, config: Config, exit: (code: number)
     refreshStatus()
   }
 
-  const instance = mountApp(store, {
+  const callbacks: AppCallbacks = {
     onSubmit: (line) => {
       void handleLine(line).catch((error: unknown) => {
         fail(error instanceof Error ? error.message : String(error), exit)
@@ -694,7 +720,22 @@ async function runInteractive(ctx: Context, config: Config, exit: (code: number)
     onComplete: (line, cursor) => completeMention(line, cursor, process.cwd()),
     onCancel: () => { current.agent?.cancel({ kind: 'user' }) },
     onSuggest: (line, cursor) => current.agent === undefined ? [] : suggestionsFor(ctx, current.agent, line, cursor),
-  })
+  }
+
+  let instance: ReturnType<typeof mountApp>
+
+  /** Suspend the Ink surface, run a raw-terminal credential flow, and remount. */
+  async function suspendSurface(flow: () => Promise<void>): Promise<void> {
+    instance.unmount()
+    try {
+      await flow()
+    } catch (error) {
+      store.push({ kind: 'error', text: error instanceof Error ? error.message : String(error) })
+    }
+    instance = mountApp(store, callbacks)
+  }
+
+  instance = mountApp(store, callbacks)
 
   try {
     await adopt()
