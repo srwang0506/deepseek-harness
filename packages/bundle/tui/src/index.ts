@@ -23,7 +23,7 @@ import type {} from '@deepseek-ai/dsh-agent-default-model'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
 import { SessionId } from '@deepseek-ai/dsh-session'
-import type { Session, SessionEvent, TurnEndReason } from '@deepseek-ai/dsh-session'
+import type { Session, SessionEvent, SessionStore, TurnEndReason } from '@deepseek-ai/dsh-session'
 import type {} from '@deepseek-ai/cordis-plugin-loader'
 import type {} from '@deepseek-ai/dsh-cmdline'
 import type {} from '@deepseek-ai/dsh-user-approval'
@@ -306,6 +306,51 @@ export function streamEventToStore(event: SessionEvent, store: UiStore): void {
     default:
       return
   }
+}
+
+/**
+ * Render one subagent session event as a labeled background row. Subagents do
+ * not stream deltas; only tool calls, the final message, and failures show.
+ * @param event - the subagent session event.
+ * @param store - the UI store receiving the rendered row.
+ * @param label - the `[subagent …]` prefix.
+ */
+function streamSubagentEventToStore(event: SessionEvent, store: UiStore, label: string): void {
+  switch (event.type) {
+    case 'tool/call':
+      store.push({ kind: 'tool', text: `${label} ${toolCallTitle(event.data.name, event.data.arguments)}` })
+      return
+    case 'assistant/message': {
+      const text = textOf(event.data.message.content)
+      if (text !== '') store.push({ kind: 'info', text: `${label} ${text}` })
+      return
+    }
+    case 'turn/end': {
+      const text = turnEndText(event.data.reason)
+      if (text !== undefined) store.push({ kind: 'error', text: `${label} ${text}` })
+      return
+    }
+    default:
+      return
+  }
+}
+
+/**
+ * Whether a session belongs to the live root: itself, or any subagent whose
+ * parent chain reaches the root id.
+ * @param session - the session to test.
+ * @param rootId - the live root session id.
+ * @param sessions - the sessions registry used to walk the parent chain.
+ */
+function belongsToCurrent(session: Session, rootId: string, sessions: SessionStore): boolean {
+  let cursor: Session | undefined = session
+  while (cursor !== undefined) {
+    if (cursor.id === rootId) return true
+    const parent = cursor.header.parentSession
+    if (parent === undefined) return false
+    cursor = sessions.get(parent)
+  }
+  return false
 }
 
 /** Join the visible text blocks of a message. */
@@ -599,10 +644,17 @@ async function runInteractive(ctx: Context, config: Config, exit: (code: number)
 
   registerCustomCommands(ctx)
 
-  // Live event stream, filtered to the current agent's session.
+  // Live event stream: the current session renders inline, and subagents of
+  // the current root render as labeled background rows.
   const disposeStream = ctx.on('session/event', (session, event) => {
-    if (current.agent === undefined || session !== current.agent.session) return
-    streamEventToStore(event, store)
+    if (current.agent === undefined) return
+    if (session === current.agent.session) {
+      streamEventToStore(event, store)
+      return
+    }
+    if (belongsToCurrent(session, current.agent.id, sessions)) {
+      streamSubagentEventToStore(event, store, `[subagent ${session.id.slice(-8)}]`)
+    }
   })
 
   const refreshStatus = (): void => {
