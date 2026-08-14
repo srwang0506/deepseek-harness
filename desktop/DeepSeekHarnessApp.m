@@ -424,7 +424,9 @@ static NSString *const DSHAppName = @"deepseek harness";
 }
 
 - (void)replyOpenAIRequest:(NSString *)requestId success:(BOOL)success value:(NSDictionary *)value {
-  NSData *requestData = [NSJSONSerialization dataWithJSONObject:requestId options:0 error:nil];
+  NSData *requestData = [NSJSONSerialization dataWithJSONObject:requestId
+                                                        options:NSJSONWritingFragmentsAllowed
+                                                          error:nil];
   NSData *valueData = [NSJSONSerialization dataWithJSONObject:value ?: @{} options:0 error:nil];
   if (!requestData || !valueData) return;
   NSString *requestJSON = [[NSString alloc] initWithData:requestData encoding:NSUTF8StringEncoding];

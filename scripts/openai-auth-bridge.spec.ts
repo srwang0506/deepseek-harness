@@ -10,6 +10,11 @@ interface NativeMessage {
 }
 
 describe('desktop OpenAI authentication bridge', () => {
+  it('serializes scalar request IDs as valid JavaScript string literals', async () => {
+    const source = await readFile(new URL('../desktop/DeepSeekHarnessApp.m', import.meta.url), 'utf8')
+    expect(source).toMatch(/dataWithJSONObject:requestId[\s\S]*options:NSJSONWritingFragmentsAllowed/)
+  })
+
   it('pauses GPT selection and offers the three Codex-compatible login choices', async () => {
     const dom = new JSDOM('<!doctype html><body></body>', {
       runScripts: 'outside-only',
