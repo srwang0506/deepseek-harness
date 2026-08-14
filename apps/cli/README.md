@@ -2,12 +2,14 @@
 
 English | [中文](README.zh.md)
 
-The `dsh` command is the product launcher for profiles: ordered stacks of plugin-bundle patch layers under the user's own overrides. [`src/args.ts`](src/args.ts) owns the command grammar, and [`src/bin.ts`](src/bin.ts) loads only the selected runner. Invalid commands, options from another mode, configuration errors, and boot failures exit nonzero.
+The `dsh` command is an interactive Codex-style coding terminal client, plus the launcher for profiles: ordered stacks of plugin-bundle patch layers under the user's own overrides. Bare `dsh` starts the terminal client (the `tui` profile), `dsh "task"` runs one task, and `dsh web` serves the browser UI. [`src/args.ts`](src/args.ts) owns the command grammar, and [`src/bin.ts`](src/bin.ts) loads only the selected runner. Invalid commands, options from another mode, configuration errors, and boot failures exit nonzero.
 
 ## Entry modes
 
 | Command | Purpose |
 |---|---|
+| `dsh` | Start the interactive terminal client (the default `tui` profile). |
+| `dsh "job"` | Answer one task, print the final answer, and exit. |
 | `dsh --profile <name>` | Boot the named profile under `$DSH_HOME/profiles/<name>`. |
 | `dsh --profile headless "job"` | Run one fresh persisted session, print the final answer, and exit. |
 | `dsh web` | Alias of `--profile web`. |
@@ -21,7 +23,7 @@ The launcher parses only its own flags and hands everything after them to the bo
 
 ```sh
 dsh --profile web --port 8080       # --port belongs to the web app
-dsh --profile tui --resume <id>     # example, assuming the tui profile is installed; --resume belongs to the terminal app
+dsh --resume <id>                  # resume a session in the terminal client (tui is the default profile)
 dsh --profile headless "run the tests"
 dsh --profile web --help            # the web app's flags, not the launcher's
 dsh --help                          # the launcher's own help

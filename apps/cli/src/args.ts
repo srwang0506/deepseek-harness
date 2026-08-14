@@ -63,12 +63,12 @@ const collect = (value: string, previous: string[] = []): string[] => [...previo
 /** The launcher's own help text; each app prints its own. */
 const HELP_EXAMPLES = `
 Examples:
-  dsh --profile web                          boot the web profile (same as: dsh web)
-  dsh --profile headless "run the tests"     answer one task, print the result, and exit
-  dsh --profile tui --patch ./extra.yml      boot a custom profile with one extra overlay
-  dsh --profile tui --resume <session>       arguments after the launcher flags reach the app
-  dsh --profile web --help                   the web app's own flags and help
-  dsh plugin --profile tui add <package>     install a plugin into the tui profile
+  dsh                                         start the interactive terminal client
+  dsh "run the tests"                         answer one task and exit
+  dsh web                                     boot the web UI (same as: dsh --profile web)
+  dsh --profile <name> ...                    boot any named profile
+  dsh --profile web --help                    the web app's own flags and help
+  dsh plugin --profile tui add <package>      install a plugin into a profile
 `
 
 /**
@@ -117,7 +117,7 @@ export function parseDshArgs(argv: readonly string[], version: string): DshInvoc
   program
     .name('dsh')
     .version(version, '-V, --version', 'output the version number')
-    .description('dsh: boot a DeepSeek Harness profile — an ordered stack of plugin-bundle patch layers under your own overrides.')
+    .description('dsh: an interactive Codex-style coding terminal client, with a one-shot mode and a web UI.')
     .addHelpText('after', HELP_EXAMPLES)
     .exitOverride()
     // The launcher's flags come first and end at the first token it does not
@@ -135,11 +135,13 @@ export function parseDshArgs(argv: readonly string[], version: string): DshInvoc
     .action((args: string[], options: BootOptions & { profile?: string }) => {
       // With the app owning -h, the launcher's own help is what a bare
       // `dsh -h` (no profile to hand it to) must print.
-      if (options.profile === undefined) {
-        if (args.some(argument => argument === '-h' || argument === '--help')) program.help()
-        program.error('error: --profile <name> is required')
+      if (options.profile === undefined
+        && args.some(argument => argument === '-h' || argument === '--help')) {
+        program.help()
       }
-      const profile = options.profile
+      // Bare `dsh` (no profile, no web/plugin subcommand) boots the terminal
+      // client profile; the tui app owns the task positional and its flags.
+      const profile = options.profile ?? 'tui'
       if (profile === '') program.error('error: --profile needs a name')
       resolved = resolveBoot(program, profile, options, args)
     })

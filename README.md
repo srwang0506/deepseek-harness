@@ -51,10 +51,12 @@ The CLI is linked as `~/.local/bin/deepseek-harness`. DeepSeek remains the defau
 Install `Node.js`, then run:
 
 ```sh
-npx @deepseek-ai/dsh web
+npx @deepseek-ai/dsh            # interactive terminal client
+npx @deepseek-ai/dsh "task"     # run one task and exit
+npx @deepseek-ai/dsh web        # Web UI
 ```
 
-The command starts the Web UI, served at `http://127.0.0.1:3080` by default. See [Web UI guide](docs/user/guide/index.md).
+`dsh` is a Codex-style interactive terminal client. Bare `dsh` opens a full-screen session in your terminal; `dsh "task"` runs one task and prints the result; `dsh web` serves the browser UI at `http://127.0.0.1:3080` by default. See [Web UI guide](docs/user/guide/index.md).
 
 ### Run from source
 
@@ -65,7 +67,9 @@ git clone https://github.com/deepseek-ai/deepseek-harness.git
 cd deepseek-harness
 pnpm install
 pnpm run build
-pnpm dsh web
+pnpm dsh            # interactive terminal client
+pnpm dsh "task"     # run one task and exit
+pnpm dsh web        # Web UI
 ```
 
 ## Community and support

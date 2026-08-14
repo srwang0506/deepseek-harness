@@ -30,6 +30,16 @@ describe('parseDshArgs', () => {
       .toEqual({ mode: 'profile', profile: 'web', patches: ['web.yml'], args: [] })
   })
 
+  it('defaults to the tui terminal profile when no --profile is given', () => {
+    expect(parse([])).toEqual({ mode: 'profile', profile: 'tui', patches: [], args: [] })
+    expect(parse(['run', 'the', 'tests']))
+      .toEqual({ mode: 'profile', profile: 'tui', patches: [], args: ['run', 'the', 'tests'] })
+    expect(parse(['--resume', 'abc']))
+      .toEqual({ mode: 'profile', profile: 'tui', patches: [], args: ['--resume', 'abc'] })
+    expect(parse(['--dump-config']))
+      .toEqual({ mode: 'dump-config', profile: 'tui', defaultOnly: false, patches: [] })
+  })
+
   it('ends the launcher flags at the first token it does not own', () => {
     // App flags, including its -h, and positionals reach the app verbatim.
     expect(parse(['--profile', 'tui', '--resume', 'abc']))
@@ -70,19 +80,12 @@ describe('parseDshArgs', () => {
       .toEqual({ mode: 'dump-config', profile: 'web', defaultOnly: true, patches: [] })
   })
 
-  it('rejects missing profile, removed flags, and contradictory inputs', () => {
-    expect(exitCode([])).toBe(1)
-    expect(exitCode(['tui'])).toBe(1) // an app argument without --profile has no app to reach
-    expect(exitCode(['--config', 'c.yml'])).toBe(1) // removed
-    expect(exitCode(['-p', 'task'])).toBe(1) // removed
-    expect(exitCode(['run', 'task'])).toBe(1) // app-owned task replaced the launcher subcommand
+  it('rejects contradictory or malformed inputs', () => {
     expect(exitCode(['--profile', ''])).toBe(1)
     expect(exitCode(['--profile', 'x', '--patch='])).toBe(1)
-    expect(exitCode(['--dump-config'])).toBe(1)
     expect(exitCode(['--profile', 'x', '--dump-config', '--dump-default-config'])).toBe(1)
     expect(exitCode(['--profile', 'x', '--dump-default-config', '--patch', 'p.yml'])).toBe(1)
     expect(exitCode(['--profile', 'x', '--dump-config', 'task'])).toBe(1)
-    expect(exitCode(['--bogus'])).toBe(1)
     expect(exitCode(['--profile', 'x', 'web'])).toBe(1)
     expect(exitCode(['web', '--dump-config', '--dump-default-config'])).toBe(1)
     expect(exitCode(['web', '--dump-default-config', '--patch', 'w.yml'])).toBe(1)

@@ -51,10 +51,12 @@ CLI 会链接为 `~/.local/bin/deepseek-harness`。DeepSeek 仍是默认模型�
 安装 `Node.js`，然后运行：
 
 ```sh
-npx @deepseek-ai/dsh web
+npx @deepseek-ai/dsh            # interactive terminal client
+npx @deepseek-ai/dsh "task"     # run one task and exit
+npx @deepseek-ai/dsh web        # Web UI
 ```
 
-该命令会启动 Web UI，默认地址为 `http://127.0.0.1:3080`。详见 [Web UI 指南](docs/user/guide/index.md)。
+`dsh` 是一个 Codex 风格的交互式终端客户端。裸 `dsh` 会在你的终端里打开全屏会话；`dsh "任务"` 执行一个任务并打印结果；`dsh web` 启动浏览器 UI，默认地址为 `http://127.0.0.1:3080`。详见 [Web UI 指南](docs/user/guide/index.md)。
 
 ### 从源码运行
 
@@ -65,7 +67,9 @@ git clone https://github.com/deepseek-ai/deepseek-harness.git
 cd deepseek-harness
 pnpm install
 pnpm run build
-pnpm dsh web
+pnpm dsh            # interactive terminal client
+pnpm dsh "task"     # run one task and exit
+pnpm dsh web        # Web UI
 ```
 
 ## 社区与支持

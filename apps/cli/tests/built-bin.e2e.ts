@@ -310,19 +310,20 @@ function startStartupProfile(fixture: StartupFixture, args: readonly string[]) {
 }
 
 describe.skipIf(!existsSync(dshBin))('dsh BUILT bin (node lib/bin.js, no tsx)', () => {
-  it('requires --profile and rejects removed commands', async () => {
-    const bare = await runBuiltBin()
-    expect(bare.code).toBe(1)
-    expect(bare.stdout).toBe('')
-    expect(bare.stderr).toContain('--profile <name> is required')
-    const help = await runBuiltBin(['--help'])
-    expect(help.code).toBe(0)
-    expect(help.stdout).toContain('dsh --profile web')
-    expect(help.stdout).toContain('dsh plugin --profile')
-    expect(help.stdout).not.toMatch(/^\s+(?:tui|meta|upgrade)\b/mu)
-    for (const removed of [['tui'], ['--config', 'x.yml'], ['-p', 'task'], ['run', 'task']]) {
-      const result = await runBuiltBin(removed)
-      expect(result.code).toBe(1)
+  it('boots the tui profile by default and requires a task without a TTY', async () => {
+    const home = mkdtempSync(join(tmpdir(), 'dsh-tui-default-'))
+    try {
+      const bare = await runBuiltBin([], { DSH_HOME: home })
+      expect(bare.code).toBe(1)
+      expect(bare.stdout).toBe('')
+      expect(bare.stderr).toContain('no task provided and stdin is not a terminal')
+      const help = await runBuiltBin(['--help'], { DSH_HOME: home })
+      expect(help.code).toBe(0)
+      expect(help.stdout).toContain('dsh web')
+      expect(help.stdout).toContain('dsh plugin --profile')
+      expect(help.stdout).not.toMatch(/^\s+(?:meta|upgrade)\b/mu)
+    } finally {
+      rmSync(home, { recursive: true, force: true })
     }
   }, 30_000)
 
@@ -388,6 +389,32 @@ describe.skipIf(!existsSync(dshBin))('dsh BUILT bin (node lib/bin.js, no tsx)', 
       expect(server.requests.length).toBeGreaterThan(0)
       expect(server.requests.every(request => request.path === '/chat/completions')).toBe(true)
       expect(JSON.stringify(server.requests.map(request => request.body))).toContain('answer from the published entry')
+    } finally {
+      await server.close()
+      rmSync(home, { recursive: true, force: true })
+    }
+  }, 30_000)
+
+  it('runs the tui profile one-shot through the default bare dsh entry', async () => {
+    const apiKey = 'built-dsh-tui-key'
+    const server = await startMockLlmServer({
+      sequence: ['success'],
+      apiKey,
+      successText: 'published tui profile reached the mock',
+    })
+    const home = mkdtempSync(join(tmpdir(), 'dsh-built-tui-'))
+    try {
+      const result = await runBuiltBin(['answer', 'from', 'the', 'tui', 'entry'], {
+        DSH_HOME: home,
+        DSH_TELEMETRY_DISABLED: '1',
+        DEEPSEEK_API_KEY: apiKey,
+        DEEPSEEK_BASE_URL: server.baseURL,
+      })
+      expect(result.code, result.stderr).toBe(0)
+      expect(result.stdout).toBe('published tui profile reached the mock')
+      expect(result.stderr).toBe('')
+      expect(server.requests.length).toBeGreaterThan(0)
+      expect(server.requests.every(request => request.path === '/chat/completions')).toBe(true)
     } finally {
       await server.close()
       rmSync(home, { recursive: true, force: true })
