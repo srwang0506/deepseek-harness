@@ -11,7 +11,8 @@
 
 import { randomUUID } from 'node:crypto'
 import { existsSync, rmSync, writeFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { readFile } from 'node:fs/promises'
+import { basename, join } from 'node:path'
 import { spawn } from 'node:child_process'
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
@@ -30,6 +31,7 @@ import type { ApprovalOutcome } from '@deepseek-ai/dsh-user-approval/types'
 import type {} from '@deepseek-ai/dsh-user-questions'
 import type { AskUserQuestionAnswer, AskUserQuestionItem } from '@deepseek-ai/dsh-user-questions'
 import type { FileDiff } from '@deepseek-ai/dsh-tools/presentation'
+import type { ImageBlock } from '@deepseek-ai/dsh-llm'
 import type { UserQuestionProvider } from '@deepseek-ai/dsh-user-questions'
 import type {} from '@deepseek-ai/dsh-session-persistence'
 import type {} from '@deepseek-ai/dsh-commands'
@@ -65,6 +67,8 @@ export interface Config {
   model: string
   /** One-shot output format: plain text, a final JSON object, or streaming JSONL. */
   output: 'text' | 'json' | 'jsonl'
+  /** Image files attached to the first user message (png/jpeg/webp/gif). */
+  images: string[]
 }
 
 export const Config: z<Config> = z.object({
@@ -73,6 +77,7 @@ export const Config: z<Config> = z.object({
   continue: z.boolean().default(false),
   model: z.string().default(''),
   output: z.union([z.const('text'), z.const('json'), z.const('jsonl')]).default('text'),
+  images: z.array(z.string()).default([]),
 })
 
 /** The process streams the runner reads/writes; tests substitute captures. */
@@ -179,8 +184,9 @@ async function runOneShot(ctx: Context, config: Config, exit: (code: number) => 
     })
   }
 
+  const blocks = await imageBlocks(ctx, config.images)
   agent.followup(createUserMessage({
-    content: [{ type: 'text', text: config.task }],
+    content: [{ type: 'text', text: config.task }, ...blocks],
     source: { kind: 'user' },
   }))
   await agent.whenIdle()
@@ -504,6 +510,39 @@ async function runLocalCommand(command: string, store: UiStore): Promise<void> {
   })
 }
 
+/** Accepted raster media type for one image path, by extension. */
+function mediaTypeOf(path: string): 'image/png' | 'image/jpeg' | 'image/webp' | 'image/gif' | undefined {
+  const extension = basename(path).slice(basename(path).lastIndexOf('.') + 1).toLowerCase()
+  switch (extension) {
+    case 'png': return 'image/png'
+    case 'jpg':
+    case 'jpeg': return 'image/jpeg'
+    case 'webp': return 'image/webp'
+    case 'gif': return 'image/gif'
+    default: return undefined
+  }
+}
+
+/**
+ * Read and durably commit each `--image` file through the attachment service.
+ * @param ctx - plugin context carrying the attachment store.
+ * @param paths - image file paths in argv order.
+ * @returns the image content blocks for the first user message.
+ */
+async function imageBlocks(ctx: Context, paths: readonly string[]): Promise<ImageBlock[]> {
+  const attachments = ctx.get('attachments')
+  const blocks: ImageBlock[] = []
+  for (const path of paths) {
+    if (attachments === undefined) throw new Error('tui-runner: the attachment service is not mounted')
+    const mediaType = mediaTypeOf(path)
+    if (mediaType === undefined) throw new Error(`unsupported image type for ${path} (use png, jpeg, webp, or gif)`)
+    const bytes = await readFile(path)
+    const attachment = await attachments.saveImage({ data: new Uint8Array(bytes), mediaType, name: basename(path) })
+    blocks.push({ type: 'image', attachment })
+  }
+  return blocks
+}
+
 /** Interactive mode: mount the full-screen Ink app and drive the agent. */
 async function runInteractive(ctx: Context, config: Config, exit: (code: number) => void): Promise<void> {
   await ctx.get('loader')?.await()
@@ -589,6 +628,8 @@ async function runInteractive(ctx: Context, config: Config, exit: (code: number)
 
   let quitResolve: (() => void) | undefined
   const quitPromise = new Promise<void>((resolve) => { quitResolve = resolve })
+  // `--image` files attach to the first submitted message, then are consumed.
+  let pendingImages: readonly string[] = config.images
 
   /** Handle one submitted line: a slash command, a mention, or a plain prompt. */
   const handleLine = async (line: string): Promise<void> => {
@@ -808,10 +849,12 @@ async function runInteractive(ctx: Context, config: Config, exit: (code: number)
         source: { kind: 'plugin', plugin: 'tui-mention' },
       }))
     }
+    const blocks = await imageBlocks(ctx, pendingImages)
+    pendingImages = []
     store.push({ kind: 'user', text: line })
     store.setRunning(true)
     agent.followup(createUserMessage({
-      content: [{ type: 'text', text: line }],
+      content: [{ type: 'text', text: line }, ...blocks],
       source: { kind: 'user' },
     }))
     await agent.whenIdle()

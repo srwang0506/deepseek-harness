@@ -31,6 +31,8 @@ export interface TuiStartupValues {
   model: string
   /** One-shot output format: plain text, a final JSON object, or streaming JSONL. */
   output: 'text' | 'json' | 'jsonl'
+  /** Image files attached to the first user message. */
+  images: string[]
 }
 
 /** The flag family as commander parsed it. */
@@ -40,7 +42,11 @@ interface TuiOptions {
   model?: string
   json?: boolean
   jsonl?: boolean
+  image?: string[]
 }
+
+/** Repeatable single-value collector: `--image a.png --image b.png`. */
+const collectImages = (value: string, previous: string[] = []): string[] => [...previous, value]
 
 /**
  * This app's command: the task positional, its flags, and its help text.
@@ -57,12 +63,14 @@ function tuiCommand(): Command {
     .option('-m, --model <model>', 'the model id (or provider/id) to use')
     .option('--json', 'one-shot: print one JSON result object on stdout')
     .option('--jsonl', 'one-shot: stream session events as JSON lines')
+    .option('-i, --image <path>', 'attach an image file (png/jpeg/webp/gif; repeatable)', collectImages, [])
     .addHelpText('after', `
 Examples:
   dsh                              start an interactive session
   dsh "run the tests"              answer one task and exit
   dsh --json "run the tests"       one task, JSON result on stdout
   dsh --jsonl "run the tests"      one task, streamed JSONL events
+  dsh -i shot.png "fix this UI"    one task with an attached image
   dsh --resume <session-id>        resume an earlier session interactively
   dsh --continue                   resume the most recent session
   dsh -m deepseek-chat "hi"        one task with a specific model
@@ -115,6 +123,7 @@ export function apply(ctx: Context): void {
       continue: options.continue === true,
       model: options.model ?? '',
       output: options.jsonl === true ? 'jsonl' : options.json === true ? 'json' : 'text',
+      images: options.image ?? [],
     } satisfies TuiStartupValues)
   })
   parseCmdline(ctx, program)

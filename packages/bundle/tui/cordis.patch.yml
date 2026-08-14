@@ -39,3 +39,4 @@
         continue: !!js ctx.tuiStartup.continue ?? false
         model: !!js ctx.tuiStartup.model ?? ''
         output: !!js ctx.tuiStartup.output ?? 'text'
+        images: !!js ctx.tuiStartup.images ?? []

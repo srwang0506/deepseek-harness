@@ -49,6 +49,7 @@ export const apply = ctx => globalThis.__tuiStartupApply(ctx)
     '    continue: !!js ctx.tuiStartup.continue ?? false',
     '    model: !!js ctx.tuiStartup.model ?? \'\'',
     '    output: !!js ctx.tuiStartup.output ?? \'text\'',
+    '    images: !!js ctx.tuiStartup.images ?? []',
     '- id: tui-startup',
     `  name: ${pathToFileURL(join(dir, 'startup.mjs')).href}`,
     '',
@@ -79,14 +80,14 @@ export const apply = ctx => globalThis.__tuiStartupApply(ctx)
 describe('tui command-line provider', () => {
   it('publishes the parsed invocation to the runner', async () => {
     const { startup, observed } = await bootStartup(['run', 'the', 'tests'])
-    expect(startup).toEqual({ task: 'run the tests', resumeSessionId: '', continue: false, model: '', output: 'text' })
-    expect(observed.runnerConfig).toEqual({ task: 'run the tests', resumeSessionId: '', continue: false, model: '', output: 'text' })
+    expect(startup).toEqual({ task: 'run the tests', resumeSessionId: '', continue: false, model: '', output: 'text', images: [] })
+    expect(observed.runnerConfig).toEqual({ task: 'run the tests', resumeSessionId: '', continue: false, model: '', output: 'text', images: [] })
     expect(observed.exits).toEqual([])
   })
 
   it('publishes the resume and model flags', async () => {
     const { startup } = await bootStartup(['--resume', 'abc', '-m', 'deepseek-chat'])
-    expect(startup).toEqual({ task: '', resumeSessionId: 'abc', continue: false, model: 'deepseek-chat', output: 'text' })
+    expect(startup).toEqual({ task: '', resumeSessionId: 'abc', continue: false, model: 'deepseek-chat', output: 'text', images: [] })
   })
 
   it('publishes the json and jsonl output flags', async () => {
@@ -94,6 +95,11 @@ describe('tui command-line provider', () => {
     expect(json.startup?.output).toBe('json')
     const jsonl = await bootStartup(['--jsonl', 'run', 'tests'])
     expect(jsonl.startup?.output).toBe('jsonl')
+  })
+
+  it('publishes the repeatable image flags', async () => {
+    const { startup } = await bootStartup(['-i', 'a.png', '-i', 'b.jpg', 'run'])
+    expect(startup?.images).toEqual(['a.png', 'b.jpg'])
   })
 
   it('rejects --json with --jsonl', async () => {

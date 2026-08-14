@@ -89,7 +89,7 @@ async function bench(script: Script): Promise<Bench> {
       const exited = new Promise<number>((resolve) => {
         ctx.provide('appExit', (code: number) => { order.push('exit'); resolve(code) })
       })
-      apply(ctx, { task: 'do the thing', resumeSessionId: '', continue: false, model: '', output: 'text' })
+      apply(ctx, { task: 'do the thing', resumeSessionId: '', continue: false, model: '', output: 'text', images: [] })
       return { code: await exited, out, err, order }
     },
   }
@@ -123,7 +123,7 @@ describe('tui runner (one-shot)', () => {
   })
 
   it('validates config defaults', () => {
-    expect(new Config({ task: 'x', resumeSessionId: '', continue: false, model: '', output: 'text' }))
-      .toMatchObject({ task: 'x', resumeSessionId: '', continue: false, model: '', output: 'text' })
+    expect(new Config({ task: 'x', resumeSessionId: '', continue: false, model: '', output: 'text', images: [] }))
+      .toMatchObject({ task: 'x', resumeSessionId: '', continue: false, model: '', output: 'text', images: [] })
   })
 })
