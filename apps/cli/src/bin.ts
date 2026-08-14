@@ -67,6 +67,22 @@ switch (invocation.mode) {
     await logoutOpenAi()
     break
   }
+  case 'provider': {
+    const { addProvider, listProviders, removeProvider } = await import('./provider.ts')
+    if (invocation.action === 'list') {
+      await listProviders()
+    } else if (invocation.action === 'add') {
+      await addProvider(invocation.name, {
+        apiKeyEnv: invocation.apiKeyEnv ?? '',
+        ...(invocation.baseURL === undefined ? {} : { baseURL: invocation.baseURL }),
+        ...(invocation.model === undefined ? {} : { model: invocation.model }),
+        ...(invocation.displayName === undefined ? {} : { displayName: invocation.displayName }),
+      })
+    } else {
+      await removeProvider(invocation.name)
+    }
+    break
+  }
   default:
     invocation satisfies never
     throw new Error(`dsh: unhandled invocation mode ${JSON.stringify(invocation)}`)

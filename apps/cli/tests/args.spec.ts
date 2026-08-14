@@ -79,6 +79,16 @@ describe('parseDshArgs', () => {
     expect(parse(['logout'])).toEqual({ mode: 'logout' })
   })
 
+  it('routes the pi-ai provider management commands', () => {
+    expect(parse(['providers'])).toEqual({ mode: 'provider', action: 'list', name: '' })
+    expect(parse(['provider', 'add', 'anthropic', '--api-key-env', 'ANTHROPIC_API_KEY']))
+      .toEqual({ mode: 'provider', action: 'add', name: 'anthropic', apiKeyEnv: 'ANTHROPIC_API_KEY' })
+    expect(parse(['provider', 'add', 'gateway', '--api-key-env', 'K', '--base-url', 'https://g.example/v1', '--model', 'm']))
+      .toEqual({ mode: 'provider', action: 'add', name: 'gateway', apiKeyEnv: 'K', baseURL: 'https://g.example/v1', model: 'm' })
+    expect(parse(['provider', 'remove', 'anthropic']))
+      .toEqual({ mode: 'provider', action: 'remove', name: 'anthropic' })
+  })
+
   it('routes profile and web config dumps', () => {
     expect(parse(['--profile', 'web', '--dump-config']))
       .toEqual({ mode: 'dump-config', profile: 'web', defaultOnly: false, patches: [] })

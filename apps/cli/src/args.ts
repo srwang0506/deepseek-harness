@@ -68,6 +68,20 @@ interface LogoutInvocation {
   mode: 'logout'
 }
 
+/** Manage pi-ai provider routes. */
+interface ProviderInvocation {
+  mode: 'provider'
+  /** `list` prints configured routes; `add`/`remove` edit them. */
+  action: 'list' | 'add' | 'remove'
+  /** Provider route name; empty for `list`. */
+  name: string
+  /** add options; absent when unused. */
+  apiKeyEnv?: string
+  baseURL?: string
+  model?: string
+  displayName?: string
+}
+
 /** The resolved `dsh` invocation. Help, version, and errors exit inside {@link parseDshArgs}. */
 export type DshInvocation =
   | ProfileInvocation
@@ -77,6 +91,7 @@ export type DshInvocation =
   | ModelInvocation
   | StatusInvocation
   | LogoutInvocation
+  | ProviderInvocation
 
 /** Launcher flags shared by the default command and the `web` alias. */
 interface BootOptions {
@@ -103,6 +118,8 @@ Examples:
   dsh login                                   log into the optional OpenAI GPT provider
   dsh model gpt                               select an OpenAI GPT default model
   dsh status                                  show the OpenAI GPT login state
+  dsh provider add anthropic --api-key-env ANTHROPIC_API_KEY
+  dsh provider add gateway --api-key-env GATEWAY_KEY --base-url https://gateway.example/v1 --model gpt-4o
 `
 
 /**
@@ -243,6 +260,42 @@ export function parseDshArgs(argv: readonly string[], version: string): DshInvoc
   logout.action(() => {
     rejectParentOptions('logout')
     resolved = { mode: 'logout' }
+  })
+
+  const provider = program.command('provider').description('manage pi-ai provider routes (third-party models)')
+  const providerAdd = provider.command('add').description('configure a catalog route or a custom OpenAI-compatible endpoint')
+  providerAdd
+    .argument('<name>', 'route id: a pi-ai catalog id (openai, anthropic, gemini, …) or any name for a custom endpoint')
+    .requiredOption('--api-key-env <env>', 'environment variable (or credential ref) holding the provider API key')
+    .option('--base-url <url>', 'custom OpenAI-compatible endpoint base URL')
+    .option('--model <id>', 'model id for a custom endpoint (required with --base-url)')
+    .option('--name <display>', 'user-facing route name')
+    .action((name: string, options: { apiKeyEnv: string; baseUrl?: string; model?: string; name?: string }) => {
+      rejectParentOptions('provider')
+      resolved = {
+        mode: 'provider',
+        action: 'add',
+        name,
+        apiKeyEnv: options.apiKeyEnv,
+        ...(options.baseUrl === undefined ? {} : { baseURL: options.baseUrl }),
+        ...(options.model === undefined ? {} : { model: options.model }),
+        ...(options.name === undefined ? {} : { displayName: options.name }),
+      }
+    })
+
+  provider
+    .command('remove')
+    .description('remove a configured provider route')
+    .argument('<name>', 'route id written by a previous `provider add`')
+    .action((name: string) => {
+      rejectParentOptions('provider')
+      resolved = { mode: 'provider', action: 'remove', name }
+    })
+
+  const providers = program.command('providers').description('list configured pi-ai provider routes')
+  providers.action(() => {
+    rejectParentOptions('providers')
+    resolved = { mode: 'provider', action: 'list', name: '' }
   })
 
   try {

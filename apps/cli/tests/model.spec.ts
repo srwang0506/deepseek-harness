@@ -27,7 +27,19 @@ describe('selectModel', () => {
     expect(settings).toContain('reasoningEffort: xhigh')
   })
 
+  it('selects any configured provider/model route', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'dsh-model-'))
+    roots.push(root)
+    vi.stubEnv('DSH_HOME', root)
+
+    await selectModel(['anthropic/claude-sonnet-4-5'])
+
+    const settings = await readFile(join(root, 'settings.yaml'), 'utf8')
+    expect(settings).toContain('provider: anthropic')
+    expect(settings).toContain('model: claude-sonnet-4-5')
+  })
+
   it('rejects an unknown model family', async () => {
-    await expect(selectModel(['anthropic'])).rejects.toThrow('model must be deepseek, gpt, or status')
+    await expect(selectModel(['anthropic'])).rejects.toThrow('model must be deepseek, gpt, provider/model, or status')
   })
 })

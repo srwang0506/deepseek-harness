@@ -74,9 +74,11 @@ dsh web --help
 
 `DSH_TOOLS_MODE` 为进程选择 `native`、`code` 或 `both`；其他值会导致启动失败。随附的 `minimal` agent preset 会保留该部署的呈现方式，将完整系统提示词固定为 `You are a helpful software engineer assistant.`，并且仅组合持久 `bash` 和 `str_replace_editor`。创建 Web 会话时请选择极简模式；该 agent 不包含任何其他提示词段落或面向模型的插件，而共享的浏览器、workspace、持久化、沙箱与权限宿主保持不变。
 
-## OpenAI GPT 登录与模型选择
+## OpenAI GPT 登录、模型选择与第三方提供方
 
-可选的 OpenAI GPT 提供方通过 `dsh login` 登录（浏览器 OAuth、设备码 OAuth 或 OpenAI Platform API key），通过 `dsh status` 查看状态，通过 `dsh logout` 退出。凭据保存在 `$DSH_HOME/pi-ai-auth.json`，与 `llm-pi-ai` 提供方路由读取的同一个 owner-only 文档一致。`dsh model` 显示或选择默认 agent 模型：`dsh model`（或 `model status`）打印当前选择，`dsh model deepseek` 选择 DeepSeek V4 Flash，`dsh model gpt [model] [effort]` 选择 OpenAI GPT 路由。stdin 为终端时，不带方式调用 `dsh login` 会提示选择；否则必须显式指定方式。
+可选的 OpenAI GPT 提供方通过 `dsh login` 登录（浏览器 OAuth、设备码 OAuth 或 OpenAI Platform API key），通过 `dsh status` 查看状态，通过 `dsh logout` 退出。凭据保存在 `$DSH_HOME/pi-ai-auth.json`，与 `llm-pi-ai` 提供方路由读取的同一个 owner-only 文档一致。`dsh model` 显示或选择默认 agent 模型：`dsh model`（或 `model status`）打印当前选择，`dsh model deepseek` 选择 DeepSeek V4 Flash，`dsh model gpt [model] [effort]` 选择 OpenAI GPT 路由，`dsh model <provider>/<model>` 选择任意已配置路由。stdin 为终端时，不带方式调用 `dsh login` 会提示选择；否则必须显式指定方式。
+
+第三方提供方是存储在 `$DSH_HOME/settings.yaml` 中 `llm-pi-ai` settings 段里的 pi-ai 路由，与网页版 Models 页编辑的是同一份文档。`dsh providers` 列出已配置路由；`dsh provider add <name> --api-key-env <ENV>` 启用一个 pi-ai 目录路由（openai、anthropic、gemini 等），再加上 `--base-url <url> --model <id>` 则声明一个自定义 OpenAI 兼容 endpoint（协议 `openai-completions`）。`dsh provider remove <name>` 删除路由。API key 在请求时从指定的环境变量或凭据引用读取。
 
 ## 共享部署行为
 

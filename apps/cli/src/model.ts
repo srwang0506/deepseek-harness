@@ -14,20 +14,12 @@ import { dshHomePath } from '@deepseek-ai/dsh-home-paths'
 import { parseDocument } from 'yaml'
 import type { Document } from 'yaml'
 
-/** DeepSeek default selection written by `model deepseek`. */
-interface DeepSeekSelection {
-  provider: 'deepseek-official'
-  model: 'deepseek-v4-flash'
-}
-
-/** OpenAI GPT selection written by `model gpt`. */
-interface GptSelection {
-  provider: 'openai-codex'
+/** A stored default model selection: a provider route and a model id. */
+interface ModelSelection {
+  provider: string
   model: string
-  reasoningEffort: string
+  reasoningEffort?: string
 }
-
-type ModelSelection = DeepSeekSelection | GptSelection
 
 /** Resolve the settings document at call time so a `DSH_HOME` override applies per invocation. */
 function settingsPath(): string {
@@ -64,7 +56,7 @@ async function saveModel(selection: ModelSelection): Promise<void> {
   })
   process.stdout.write(
     `Selected ${selection.provider}/${selection.model}`
-    + (selection.provider === 'openai-codex' ? ` (${selection.reasoningEffort})` : '')
+    + (selection.reasoningEffort === undefined ? '' : ` (${selection.reasoningEffort})`)
     + '\n',
   )
 }
@@ -95,7 +87,8 @@ async function showModel(): Promise<void> {
 
 /**
  * Select or show the default agent model.
- * @param args - `[family, modelId?, reasoningEffort?]`; empty (or `status`) shows the current selection.
+ * @param args - `[family, modelId?, reasoningEffort?]`; `provider/model` selects any
+ * configured route; empty (or `status`) shows the current selection.
  */
 export async function selectModel(args: readonly string[]): Promise<void> {
   if (args.length > 3) throw new Error('model accepts at most a family, model id, and reasoning effort')
@@ -112,5 +105,9 @@ export async function selectModel(args: readonly string[]): Promise<void> {
       reasoningEffort: reasoningEffort ?? 'high',
     })
   }
-  throw new Error('model must be deepseek, gpt, or status')
+  const slash = family.indexOf('/')
+  if (slash > 0 && modelId === undefined && reasoningEffort === undefined) {
+    return saveModel({ provider: family.slice(0, slash), model: family.slice(slash + 1) })
+  }
+  throw new Error('model must be deepseek, gpt, provider/model, or status')
 }
