@@ -92,6 +92,16 @@ describe('parseDshArgs', () => {
       .toEqual({ mode: 'provider', action: 'remove', name: 'anthropic' })
   })
 
+  it('routes the MCP server management commands', () => {
+    expect(parse(['mcp', 'list'])).toEqual({ mode: 'mcp', action: 'list', name: '', args: [] })
+    expect(parse(['mcp', 'add', 'github', '--command', 'npx', '--arg', '-y']))
+      .toEqual({ mode: 'mcp', action: 'add', name: 'github', command: 'npx', args: ['-y'] })
+    expect(parse(['mcp', 'add', 'fetch', '--url', 'https://m.example.com']))
+      .toEqual({ mode: 'mcp', action: 'add', name: 'fetch', args: [], url: 'https://m.example.com' })
+    expect(parse(['mcp', 'remove', 'github']))
+      .toEqual({ mode: 'mcp', action: 'remove', name: 'github', args: [] })
+  })
+
   it('routes profile and web config dumps', () => {
     expect(parse(['--profile', 'web', '--dump-config']))
       .toEqual({ mode: 'dump-config', profile: 'web', defaultOnly: false, patches: [] })

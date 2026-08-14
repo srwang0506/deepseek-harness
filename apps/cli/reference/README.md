@@ -82,6 +82,8 @@ Third-party providers are pi-ai routes stored in the `llm-pi-ai` settings sectio
 
 `dsh doctor` prints environment diagnostics — the Node version, whether `DEEPSEEK_API_KEY` is set, the harness home's writability, and the OpenAI GPT login state — and exits nonzero when any check fails. `dsh completion [bash|zsh]` prints a static completion script for the launcher-owned subcommands.
 
+MCP servers are `dsh-mcp-client` rows in the home-level `$DSH_HOME/cordis.patch.yml`, so their tools join every profile boot. `dsh mcp list` prints them; `dsh mcp add <name> --command <cmd> [--arg <a>]…` configures a stdio server and `dsh mcp add <name> --url <url>` a Streamable HTTP one; `dsh mcp remove <name>` deletes a row.
+
 ## Shared deployment behavior
 
 The base bundle mounts the native DeepSeek adapter, settings and credential providers, stable `web_search`, and disabled session telemetry. Provider credentials resolve from the inherited environment, `$DSH_HOME/.credentials.yaml`, the invoking directory's `.env`, then `$DSH_HOME/.env`; the managed document is never materialized into `process.env`, while both `.env` files are ordinary launch environment layers. Search uses `DEEPSEEK_API_KEY` and accepts `DEEPSEEK_SEARCH_BASE_URL`; `web_fetch` is disabled unless a patch layer inserts a provider and enables it.

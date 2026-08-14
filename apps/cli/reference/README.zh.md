@@ -82,6 +82,8 @@ dsh web --help
 
 `dsh doctor` 打印环境诊断——Node 版本、`DEEPSEEK_API_KEY` 是否设置、harness home 是否可写、OpenAI GPT 登录状态——任一项失败时以非零退出码结束。`dsh completion [bash|zsh]` 打印针对启动器自有子命令的静态补全脚本。
 
+MCP 服务器是 home 级 `$DSH_HOME/cordis.patch.yml` 中的 `dsh-mcp-client` 行，因此每次 profile 启动时其工具都会加入。`dsh mcp list` 列出它们；`dsh mcp add <name> --command <cmd> [--arg <a>]…` 配置 stdio 服务器，`dsh mcp add <name> --url <url>` 配置 Streamable HTTP 服务器；`dsh mcp remove <name>` 删除某行。
+
 ## 共享部署行为
 
 基础组合包挂载原生 DeepSeek 适配器、settings 与凭据提供方、稳定的 `web_search` 和已禁用的会话遥测。提供方凭据依次从继承环境、`$DSH_HOME/.credentials.yaml`、调用目录的 `.env` 和 `$DSH_HOME/.env` 解析；受管文档从不物化进 `process.env`，而两个 `.env` 文件都是普通启动环境层。搜索使用 `DEEPSEEK_API_KEY` 并接受 `DEEPSEEK_SEARCH_BASE_URL`；只有 patch 层插入提供方并启用 `web_fetch` 后，该工具才可用。

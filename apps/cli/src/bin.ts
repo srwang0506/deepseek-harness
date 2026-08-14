@@ -77,6 +77,21 @@ switch (invocation.mode) {
     runCompletion(invocation.shell)
     break
   }
+  case 'mcp': {
+    const { addMcpServer, listMcpServers, removeMcpServer } = await import('./mcp.ts')
+    if (invocation.action === 'list') {
+      await listMcpServers()
+    } else if (invocation.action === 'add') {
+      await addMcpServer(invocation.name, {
+        ...(invocation.command === undefined ? {} : { command: invocation.command }),
+        ...(invocation.url === undefined ? {} : { url: invocation.url }),
+        args: invocation.args,
+      })
+    } else {
+      await removeMcpServer(invocation.name)
+    }
+    break
+  }
   case 'provider': {
     const { addProvider, listProviders, removeProvider } = await import('./provider.ts')
     if (invocation.action === 'list') {

@@ -80,6 +80,19 @@ interface CompletionInvocation {
   shell: string | undefined
 }
 
+/** Manage MCP servers. */
+interface McpInvocation {
+  mode: 'mcp'
+  /** `list` prints configured servers; `add`/`remove` edit the home patch. */
+  action: 'list' | 'add' | 'remove'
+  /** Stable server name; empty for `list`. */
+  name: string
+  /** add options; absent when unused. */
+  command?: string
+  args: string[]
+  url?: string
+}
+
 /** Manage pi-ai provider routes. */
 interface ProviderInvocation {
   mode: 'provider'
@@ -106,6 +119,7 @@ export type DshInvocation =
   | ProviderInvocation
   | DoctorInvocation
   | CompletionInvocation
+  | McpInvocation
 
 /** Launcher flags shared by the default command and the `web` alias. */
 interface BootOptions {
@@ -290,6 +304,39 @@ export function parseDshArgs(argv: readonly string[], version: string): DshInvoc
       rejectParentOptions('completion')
       resolved = { mode: 'completion', shell }
     })
+
+  const mcp = program.command('mcp').description('manage MCP servers (stdio or streamable-http)')
+  const mcpAdd = mcp.command('add').description('add or replace one MCP server')
+  mcpAdd
+    .argument('<name>', 'stable server name ([A-Za-z0-9_-]{1,32})')
+    .option('--command <cmd>', 'executable for a stdio server')
+    .option('--arg <arg>', 'server argument without shell interpretation (repeatable)', collect, [])
+    .option('--url <url>', 'streamable-HTTP endpoint URL')
+    .action((name: string, options: { command?: string; arg: string[]; url?: string }) => {
+      rejectParentOptions('mcp')
+      resolved = {
+        mode: 'mcp',
+        action: 'add',
+        name,
+        args: options.arg,
+        ...(options.command === undefined ? {} : { command: options.command }),
+        ...(options.url === undefined ? {} : { url: options.url }),
+      }
+    })
+
+  mcp
+    .command('remove')
+    .description('remove a configured MCP server')
+    .argument('<name>', 'server name written by a previous `mcp add`')
+    .action((name: string) => {
+      rejectParentOptions('mcp')
+      resolved = { mode: 'mcp', action: 'remove', name, args: [] }
+    })
+
+  mcp.command('list').description('list configured MCP servers').action(() => {
+    rejectParentOptions('mcp')
+    resolved = { mode: 'mcp', action: 'list', name: '', args: [] }
+  })
 
   const provider = program.command('provider').description('manage pi-ai provider routes (third-party models)')
   const providerAdd = provider.command('add').description('configure a catalog route or a custom OpenAI-compatible endpoint')
