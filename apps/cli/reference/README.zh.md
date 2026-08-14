@@ -80,6 +80,8 @@ dsh web --help
 
 第三方提供方是存储在 `$DSH_HOME/settings.yaml` 中 `llm-pi-ai` settings 段里的 pi-ai 路由，与网页版 Models 页编辑的是同一份文档。`dsh providers` 列出已配置路由；`dsh provider add <name> --api-key-env <ENV>` 启用一个 pi-ai 目录路由（openai、anthropic、gemini 等），再加上 `--base-url <url> --model <id>` 则声明一个自定义 OpenAI 兼容 endpoint（协议 `openai-completions`）。`dsh provider remove <name>` 删除路由。API key 在请求时从指定的环境变量或凭据引用读取。
 
+`dsh doctor` 打印环境诊断——Node 版本、`DEEPSEEK_API_KEY` 是否设置、harness home 是否可写、OpenAI GPT 登录状态——任一项失败时以非零退出码结束。
+
 ## 共享部署行为
 
 基础组合包挂载原生 DeepSeek 适配器、settings 与凭据提供方、稳定的 `web_search` 和已禁用的会话遥测。提供方凭据依次从继承环境、`$DSH_HOME/.credentials.yaml`、调用目录的 `.env` 和 `$DSH_HOME/.env` 解析；受管文档从不物化进 `process.env`，而两个 `.env` 文件都是普通启动环境层。搜索使用 `DEEPSEEK_API_KEY` 并接受 `DEEPSEEK_SEARCH_BASE_URL`；只有 patch 层插入提供方并启用 `web_fetch` 后，该工具才可用。

@@ -68,6 +68,11 @@ interface LogoutInvocation {
   mode: 'logout'
 }
 
+/** Print environment and credential diagnostics. */
+interface DoctorInvocation {
+  mode: 'doctor'
+}
+
 /** Manage pi-ai provider routes. */
 interface ProviderInvocation {
   mode: 'provider'
@@ -92,6 +97,7 @@ export type DshInvocation =
   | StatusInvocation
   | LogoutInvocation
   | ProviderInvocation
+  | DoctorInvocation
 
 /** Launcher flags shared by the default command and the `web` alias. */
 interface BootOptions {
@@ -118,6 +124,7 @@ Examples:
   dsh login                                   log into the optional OpenAI GPT provider
   dsh model gpt                               select an OpenAI GPT default model
   dsh status                                  show the OpenAI GPT login state
+  dsh doctor                                  check environment and credentials
   dsh provider add anthropic --api-key-env ANTHROPIC_API_KEY
   dsh provider add gateway --api-key-env GATEWAY_KEY --base-url https://gateway.example/v1 --model gpt-4o
 `
@@ -260,6 +267,12 @@ export function parseDshArgs(argv: readonly string[], version: string): DshInvoc
   logout.action(() => {
     rejectParentOptions('logout')
     resolved = { mode: 'logout' }
+  })
+
+  const doctor = program.command('doctor').description('check environment, credentials, and the harness home')
+  doctor.action(() => {
+    rejectParentOptions('doctor')
+    resolved = { mode: 'doctor' }
   })
 
   const provider = program.command('provider').description('manage pi-ai provider routes (third-party models)')

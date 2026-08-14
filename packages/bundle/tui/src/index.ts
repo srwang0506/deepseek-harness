@@ -645,10 +645,15 @@ async function runInteractive(ctx: Context, config: Config, exit: (code: number)
         case 'sessions': {
           const headers = await ctx.get('sessionPersistence')?.list() ?? []
           const rows = headers.filter(h => h.origin !== 'subagent').sort((a, b) => b.createdAt - a.createdAt)
-          for (const header of rows) {
-            store.push({ kind: 'info', text: `${header.id}  ${new Date(header.createdAt).toLocaleString()}${header.cwd === undefined ? '' : `  ${header.cwd}`}` })
+          if (rows.length === 0) {
+            store.push({ kind: 'info', text: '(no persisted sessions)' })
+            return
           }
-          if (rows.length === 0) store.push({ kind: 'info', text: '(no persisted sessions)' })
+          for (const header of rows.slice(0, 20)) {
+            const marker = header.id === agent.id ? ' *' : ''
+            store.push({ kind: 'info', text: `${header.id}${marker}  ${new Date(header.createdAt).toLocaleString()}${header.cwd === undefined ? '' : `  ${header.cwd}`}` })
+          }
+          if (rows.length > 20) store.push({ kind: 'info', text: `… and ${rows.length - 20} more` })
           return
         }
         case 'resume': {

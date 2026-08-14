@@ -67,6 +67,11 @@ switch (invocation.mode) {
     await logoutOpenAi()
     break
   }
+  case 'doctor': {
+    const { runDoctor } = await import('./doctor.ts')
+    await runDoctor()
+    break
+  }
   case 'provider': {
     const { addProvider, listProviders, removeProvider } = await import('./provider.ts')
     if (invocation.action === 'list') {

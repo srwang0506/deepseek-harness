@@ -77,6 +77,7 @@ describe('parseDshArgs', () => {
     expect(parse(['model', 'deepseek'])).toEqual({ mode: 'model', args: ['deepseek'] })
     expect(parse(['status'])).toEqual({ mode: 'status' })
     expect(parse(['logout'])).toEqual({ mode: 'logout' })
+    expect(parse(['doctor'])).toEqual({ mode: 'doctor' })
   })
 
   it('routes the pi-ai provider management commands', () => {
