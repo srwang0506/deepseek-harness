@@ -36,6 +36,7 @@ import type {} from '@deepseek-ai/dsh-commands'
 import type {} from '@deepseek-ai/dsh-permission-presets'
 import type {} from '@deepseek-ai/dsh-plan-mode'
 import { loginOpenAi, logoutOpenAi, PiAiCredentialStore } from '@deepseek-ai/dsh-llm-pi-ai'
+import type {} from '@deepseek-ai/dsh-token-meter'
 import { dshHomePath } from '@deepseek-ai/dsh-home-paths'
 import { parseSlash } from './slash.ts'
 import { diffsFromMeta, plainFileDiffs } from './diff.ts'
@@ -230,6 +231,7 @@ function helpText(): string {
     '  /login [method]   log into OpenAI GPT (browser, device, api-key)',
     '  /logout           remove the OpenAI GPT credential',
     '  /sessions         list persisted sessions',
+    '  /fork             fork the current session from its latest event',
     '  /status           show model, session, cwd, and login state',
     '  /compact          compact the session history',
     '  /init             write an AGENTS.md template',
@@ -410,6 +412,8 @@ function togglePlanMode(ctx: Context, agent: Agent | undefined, store: UiStore):
 /** The status-bar text: model, permission preset, and plan mode. */
 function statusText(selection: { provider: string; model: string }, ctx: Context, agent: Agent): string {
   const parts = [`${selection.provider}/${selection.model}`]
+  const meter = ctx.get('tokenMeter')
+  if (meter !== undefined) parts.push(`${meter.measure(agent.session).totalTokens} tokens`)
   const presets = ctx.get('permissionPresets')
   if (presets !== undefined) parts.push(presets.current(agent.session.events))
   const planMode = ctx.get('planMode')
@@ -453,7 +457,7 @@ function registerCustomCommands(ctx: Context): void {
 
 /** The built-in slash-command names plus every registry command. */
 function slashNames(ctx: Context, agent: Agent): string[] {
-  const names = new Set(['new', 'resume', 'model', 'login', 'logout', 'sessions', 'status', 'compact', 'init', 'doctor', 'export', 'diff', 'review', 'undo', 'help', 'quit'])
+  const names = new Set(['new', 'fork', 'resume', 'model', 'login', 'logout', 'sessions', 'status', 'compact', 'init', 'doctor', 'export', 'diff', 'review', 'undo', 'help', 'quit'])
   const commands = ctx.get('commands')
   if (commands !== undefined) {
     for (const descriptor of commands.list(agent)) names.add(descriptor.name)
@@ -654,6 +658,16 @@ async function runInteractive(ctx: Context, config: Config, exit: (code: number)
             store.push({ kind: 'info', text: `${header.id}${marker}  ${new Date(header.createdAt).toLocaleString()}${header.cwd === undefined ? '' : `  ${header.cwd}`}` })
           }
           if (rows.length > 20) store.push({ kind: 'info', text: `… and ${rows.length - 20} more` })
+          return
+        }
+        case 'fork': {
+          const child = sessions.fork(agent.session)
+          const parentId = agent.id
+          await disposeCurrent()
+          resumeSessionId = child.id
+          await adopt()
+          refreshStatus()
+          store.push({ kind: 'info', text: `forked ${child.id} from ${parentId}` })
           return
         }
         case 'resume': {
