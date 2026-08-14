@@ -10,6 +10,40 @@ DeepSeek Harness（`dsh`）是由 [DeepSeek AI](https://deepseek.com) 开发的�
 
 DeepSeek Harness 目前处于 _开发者预览_ 阶段，正在快速迭代。**未来将出现破坏兼容性的变更。**
 
+## 原生发行版
+
+本 fork 发布 macOS App、macOS CLI 与 Linux 服务器 CLI。请只选择一个安装场景；App 与 CLI 不会捆绑安装。每种安装都会校验 Release 哈希，并在替换前备份已有目标。
+
+### macOS 桌面 App
+
+仅支持 Apple 芯片；安装图形 App，不安装 CLI：
+
+```sh
+curl -fsSL https://github.com/srwang0506/deepseek-harness/releases/latest/download/install.sh | sh -s -- macos-app
+```
+
+### macOS CLI
+
+仅支持 Apple 芯片；安装 `deepseek-harness`，不安装桌面 App：
+
+```sh
+curl -fsSL https://github.com/srwang0506/deepseek-harness/releases/latest/download/install.sh | sh -s -- macos-cli
+```
+
+### Linux x64 服务器
+
+```sh
+curl -fsSL https://github.com/srwang0506/deepseek-harness/releases/latest/download/install.sh | sh -s -- linux-x64
+```
+
+### Linux ARM64 服务器
+
+```sh
+curl -fsSL https://github.com/srwang0506/deepseek-harness/releases/latest/download/install.sh | sh -s -- linux-arm64
+```
+
+CLI 会链接为 `~/.local/bin/deepseek-harness`。DeepSeek 仍是默认模型；GPT 模型可选用浏览器 OAuth、设备码 OAuth 或 OpenAI Platform API key。安装路径、服务器登录、SSH 隧道、构建方式与安全说明请查看[原生发行指南](desktop/README.md)。
+
 ## 运行
 
 ### 通过 `npm` 运行

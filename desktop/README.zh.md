@@ -4,17 +4,47 @@
 
 DeepSeek Harness 提供 Apple 芯片原生 App、macOS CLI，以及 x64 和 ARM64 两种自包含 Linux CLI。每个发行包都用自带的 Node.js 运行时与生产依赖闭包运行官方 DeepSeek Harness agent loop。DeepSeek 继续作为默认模型，OpenAI GPT 是同一 Harness loop 内可选的模型提供方。
 
-## 一条命令安装
+## 选择安装场景
 
-Apple 芯片 macOS、Linux x64 与 Linux ARM64 使用同一条命令：
+请明确选择一个目标。没有指定目标，或目标与当前操作系统、架构不匹配时，安装器都会拒绝执行。每个目标只下载自己需要的 GitHub Release 归档，校验 SHA-256，并在替换前备份已有安装。
+
+### macOS 桌面 App
+
+在 Apple 芯片 Mac 上需要图形 App 时使用；这条命令不会安装 CLI：
 
 ```sh
-curl -fsSL https://github.com/srwang0506/deepseek-harness/releases/latest/download/install.sh | sh
+curl -fsSL https://github.com/srwang0506/deepseek-harness/releases/latest/download/install.sh | sh -s -- macos-app
 ```
 
-安装器会自动识别操作系统与架构，从 GitHub Release 下载匹配的文件，校验 SHA-256，并在替换前备份已有安装。命令会安装为 `~/.local/bin/deepseek-harness`；请确保 `~/.local/bin` 已加入 `PATH`。
+App 会安装到 `/Applications`；该目录不可写时改用 `~/Applications`。
 
-在 macOS 上，安装器会尽量把 `DeepSeek Harness.app` 放入 `/Applications`，目录不可写时改用 `~/Applications`；CLI 运行时放在 `~/Library/Application Support/DeepSeek Harness CLI`。在 Linux 上，CLI 运行时放在 `${XDG_DATA_HOME:-~/.local/share}/deepseek-harness`。
+### macOS CLI
+
+在 Apple 芯片 Mac 上需要终端命令时使用；这条命令不会安装桌面 App：
+
+```sh
+curl -fsSL https://github.com/srwang0506/deepseek-harness/releases/latest/download/install.sh | sh -s -- macos-cli
+```
+
+运行时会安装到 `~/Library/Application Support/DeepSeek Harness CLI`，并链接为 `~/.local/bin/deepseek-harness`。
+
+### Linux x64 服务器
+
+在 `x86_64` Linux 服务器上使用：
+
+```sh
+curl -fsSL https://github.com/srwang0506/deepseek-harness/releases/latest/download/install.sh | sh -s -- linux-x64
+```
+
+### Linux ARM64 服务器
+
+在 `aarch64` 或 `arm64` Linux 服务器上使用：
+
+```sh
+curl -fsSL https://github.com/srwang0506/deepseek-harness/releases/latest/download/install.sh | sh -s -- linux-arm64
+```
+
+两个 Linux 目标都会把运行时安装到 `${XDG_DATA_HOME:-~/.local/share}/deepseek-harness`，并创建 `~/.local/bin/deepseek-harness` 链接。通过命令名运行前，请确保 `~/.local/bin` 已加入 `PATH`。
 
 ## macOS App
 

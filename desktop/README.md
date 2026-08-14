@@ -4,17 +4,47 @@ English | [中文](README.zh.md)
 
 DeepSeek Harness is available as a native Apple-silicon App, a macOS CLI, and self-contained Linux CLIs for x64 and ARM64. Every distribution runs the official DeepSeek Harness agent loop with its own Node.js runtime and production dependency closure. DeepSeek remains the default model; OpenAI GPT is an optional model provider inside the same Harness loop.
 
-## One-command install
+## Choose an installation
 
-Run the same command on Apple-silicon macOS, Linux x64, or Linux ARM64:
+Choose exactly one target. The installer rejects an omitted target or a target that does not match the current operating system and architecture. Every target downloads only its own GitHub Release archive, verifies its SHA-256 checksum, and backs up an existing installation before replacement.
+
+### macOS desktop App
+
+Use this on an Apple-silicon Mac when you want the graphical App. It does not install the CLI:
 
 ```sh
-curl -fsSL https://github.com/srwang0506/deepseek-harness/releases/latest/download/install.sh | sh
+curl -fsSL https://github.com/srwang0506/deepseek-harness/releases/latest/download/install.sh | sh -s -- macos-app
 ```
 
-The installer detects the operating system and architecture, downloads the matching GitHub Release assets, verifies their SHA-256 checksums, and backs up an existing installation before replacement. It installs the shell command as `~/.local/bin/deepseek-harness`; make sure `~/.local/bin` is on `PATH`.
+The App is installed in `/Applications` when writable, otherwise in `~/Applications`.
 
-On macOS, the installer puts `DeepSeek Harness.app` in `/Applications` when writable, otherwise in `~/Applications`, and puts the CLI runtime in `~/Library/Application Support/DeepSeek Harness CLI`. On Linux, it puts the CLI runtime in `${XDG_DATA_HOME:-~/.local/share}/deepseek-harness`.
+### macOS CLI
+
+Use this on an Apple-silicon Mac when you want terminal access. It does not install the desktop App:
+
+```sh
+curl -fsSL https://github.com/srwang0506/deepseek-harness/releases/latest/download/install.sh | sh -s -- macos-cli
+```
+
+The runtime is installed in `~/Library/Application Support/DeepSeek Harness CLI` and linked as `~/.local/bin/deepseek-harness`.
+
+### Linux x64 server
+
+Use this on an `x86_64` Linux server:
+
+```sh
+curl -fsSL https://github.com/srwang0506/deepseek-harness/releases/latest/download/install.sh | sh -s -- linux-x64
+```
+
+### Linux ARM64 server
+
+Use this on an `aarch64` or `arm64` Linux server:
+
+```sh
+curl -fsSL https://github.com/srwang0506/deepseek-harness/releases/latest/download/install.sh | sh -s -- linux-arm64
+```
+
+Both Linux targets install the runtime in `${XDG_DATA_HOME:-~/.local/share}/deepseek-harness` and link `~/.local/bin/deepseek-harness`. Make sure `~/.local/bin` is on `PATH` before invoking the command by name.
 
 ## macOS App
 

@@ -24,11 +24,11 @@ macOS App 从仓库小鲸鱼路径生成白色圆角底图上的黑色小鲸鱼�
 
 ChatGPT OAuth 保留 pi-ai 的 `openai-codex-responses` 实现与 `store: false` 传输语义。同一逻辑路由存储 API key 时，适配器会经 pi-ai 的标准 `openai` Responses 提供方分派，启用服务端响应存储、持久化 `previous_response_id` 与 `reasoning.context: "all_turns"`，再把回放元数据记录在原始路由与模型下。两种路径都保留 high 推理、长时 cache、自动传输选择、Harness session id 与 catalog 支持的推理档位。
 
-POSIX 安装器会识别 macOS ARM64、Linux x64 或 Linux ARM64，从 GitHub Release 下载匹配文件，按 `SHA256SUMS` 校验每个文件，备份已有安装和旧错误命名安装，并创建稳定的 `~/.local/bin/deepseek-harness` 链接。tag 触发的 workflow 在 GitHub 原生 runner 上构建全部平台，并发布四个归档、安装器和校验清单。服务器 Web 界面在文档中只监听 loopback，远程访问使用 SSH 隧道。
+POSIX 安装器要求显式选择 `macos-app`、`macos-cli`、`linux-x64` 或 `linux-arm64`。桌面 App 与 CLI 独立安装；场景与宿主操作系统或架构不符时，会在下载归档前失败。每条路径只下载自己需要的 GitHub Release 文件，按 `SHA256SUMS` 校验，并备份已有安装和旧错误命名安装。CLI 路径会创建稳定的 `~/.local/bin/deepseek-harness` 链接。tag 触发的 workflow 在 GitHub 原生 runner 上构建全部平台，并发布四个归档、安装器和校验清单。服务器 Web 界面在文档中只监听 loopback，远程访问使用 SSH 隧道。
 
 ## 验证
 
-凭据存储测试覆盖 API-key 与 OAuth 持久化、私有权限、并发写入、删除、回调失败及格式错误文档。适配器测试固定已存密钥分派到 `/v1/responses`、Responses 控制与逻辑回放身份。界面测试固定分派前的三选一登录，并要求模型选择保持暂停直到认证成功。发行测试固定准确的产品与文件名称、标题栏行为、支持的 GitHub runner、Linux 状态路径、无桌面 OAuth 输出，以及针对本地夹具归档完成的一次真实校验和安装。macOS 验证还覆盖原生编译、签名、AppleDouble 清理、零符号链接打包、归档 smoke 与真实 loopback 启动。GitHub Release job 会在原生架构上 smoke Linux 产物。
+凭据存储测试覆盖 API-key 与 OAuth 持久化、私有权限、并发写入、删除、回调失败及格式错误文档。适配器测试固定已存密钥分派到 `/v1/responses`、Responses 控制与逻辑回放身份。界面测试固定分派前的三选一登录，并要求模型选择保持暂停直到认证成功。发行测试固定准确的产品与文件名称、标题栏行为、支持的 GitHub runner、Linux 状态路径、无桌面 OAuth 输出、必须选择场景、宿主不匹配拒绝、仅 App 安装，以及针对本地夹具归档完成的真实 CLI 校验和安装。macOS 验证还覆盖原生编译、签名、AppleDouble 清理、零符号链接打包、归档 smoke 与真实 loopback 启动。GitHub Release job 会在原生架构上 smoke Linux 产物。
 
 ## 考虑过的替代方案
 
@@ -48,4 +48,4 @@ POSIX 安装器会识别 macOS ARM64、Linux x64 或 Linux ARM64，从 GitHub Re
 
 ## 后果
 
-全新安装在进行任何 OpenAI 登录前即可使用 DeepSeek。选择 GPT 会显示三种认证方式，全部 Harness 原生能力留在同一个 loop 中。ChatGPT 与 API-key 请求有意使用不同传输和计费关系，同时模型选择器保留一条逻辑路由。macOS、Linux x64 和 Linux ARM64 共用一个命令名与一个发行安装器，但运行时归档必须在原生平台构建和测试。替换前会备份已有目标，而不是合并目录，因此已签名 bundle 与自包含运行时可以原子替换并保留恢复路径。
+全新安装在进行任何 OpenAI 登录前即可使用 DeepSeek。选择 GPT 会显示三种认证方式，全部 Harness 原生能力留在同一个 loop 中。ChatGPT 与 API-key 请求有意使用不同传输和计费关系，同时模型选择器保留一条逻辑路由。macOS App 用户、macOS 终端用户、Linux x64 服务器和 Linux ARM64 服务器共用一个发行安装器，但会选择不同场景参数；任何场景都不会安装无关界面。运行时归档仍采用原生构建。替换前会备份已有目标，而不是合并目录，因此已签名 bundle 与自包含运行时可以原子替换并保留恢复路径。

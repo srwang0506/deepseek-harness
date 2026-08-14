@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-08-14-pi-oauth-gpt-desktop.md
-2026-08-14-pi-oauth-gpt-desktop.md: ef5332767b4690355fc927b486529229407687ff
-2026-08-14-pi-oauth-gpt-desktop.zh.md: 6a25138cc0c7046bf6f971af252c34cdc9ba8430
+2026-08-14-pi-oauth-gpt-desktop.md: 4f47668a629544a0727b0a2f4d83fc35cd765ee8
+2026-08-14-pi-oauth-gpt-desktop.zh.md: 3e662be6a7bd63511851658b55ab9cbaddaf440e

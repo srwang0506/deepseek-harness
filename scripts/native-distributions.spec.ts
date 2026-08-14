@@ -18,6 +18,17 @@ async function sha256(path: string): Promise<string> {
   return createHash('sha256').update(await readFile(path)).digest('hex')
 }
 
+async function failedCommandStderr(command: string, args: readonly string[]): Promise<string> {
+  try {
+    await execFileAsync(command, [...args], { encoding: 'utf8' })
+  } catch (error) {
+    const stderr = (error as { stderr?: unknown }).stderr
+    if (typeof stderr === 'string') return stderr
+    throw error
+  }
+  throw new Error(`${command} unexpectedly succeeded`)
+}
+
 describe('DeepSeek Harness native distributions', () => {
   it('uses one product name and a native draggable macOS title bar', async () => {
     const app = await readFile(new URL('../desktop/DeepSeekHarnessApp.m', import.meta.url), 'utf8')
@@ -77,7 +88,15 @@ describe('DeepSeek Harness native distributions', () => {
     expect(settings).toContain('reasoningEffort: xhigh')
   })
 
-  it('installs a checksum-verified release through the published script', async () => {
+  it('requires an explicit installation scenario that matches the host', async () => {
+    const installer = fileURLToPath(new URL('./install-release.sh', import.meta.url))
+    expect(await failedCommandStderr('/bin/sh', [installer])).toContain('choose one installation target')
+    const mismatched = process.platform === 'darwin' ? 'linux-x64' : 'macos-app'
+    expect(await failedCommandStderr('/bin/sh', [installer, mismatched]))
+      .toContain(`DeepSeek Harness installer: ${mismatched} requires`)
+  })
+
+  it('installs checksum-verified scenario releases through the published script', async () => {
     if (!['darwin', 'linux'].includes(process.platform)) return
     const root = await mkdtemp(join(tmpdir(), 'deepseek-harness-installer-'))
     temporaryRoots.push(root)
@@ -117,23 +136,28 @@ describe('DeepSeek Harness native distributions', () => {
     const appDir = join(root, 'Applications')
     await mkdir(home)
     const installer = fileURLToPath(new URL('./install-release.sh', import.meta.url))
-    await execFileAsync('/bin/sh', [installer], {
-      env: {
-        ...process.env,
-        DEEPSEEK_HARNESS_RELEASE_BASE: pathToFileURL(release).href,
-        DEEPSEEK_HARNESS_INSTALL_ROOT: installRoot,
-        DEEPSEEK_HARNESS_BIN_DIR: bin,
-        DEEPSEEK_HARNESS_APP_DIR: appDir,
-        HOME: home,
-        PATH: `${bin}:${process.env.PATH ?? ''}`,
-      },
-    })
+    const environment = {
+      ...process.env,
+      DEEPSEEK_HARNESS_RELEASE_BASE: pathToFileURL(release).href,
+      DEEPSEEK_HARNESS_INSTALL_ROOT: installRoot,
+      DEEPSEEK_HARNESS_BIN_DIR: bin,
+      DEEPSEEK_HARNESS_APP_DIR: appDir,
+      HOME: home,
+      PATH: `${bin}:${process.env.PATH ?? ''}`,
+    }
+
+    if (process.platform === 'darwin') {
+      await execFileAsync('/bin/sh', [installer, 'macos-app'], { env: environment })
+      expect(await readFile(join(appDir, 'DeepSeek Harness.app/Contents/Info.plist'), 'utf8')).toBe('<plist/>\n')
+      await expect(readlink(join(bin, 'deepseek-harness'))).rejects.toMatchObject({ code: 'ENOENT' })
+      await execFileAsync('/bin/sh', [installer, 'macos-cli'], { env: environment })
+    } else {
+      const target = process.arch === 'arm64' ? 'linux-arm64' : 'linux-x64'
+      await execFileAsync('/bin/sh', [installer, target], { env: environment })
+    }
 
     expect(await readlink(join(bin, 'deepseek-harness'))).toBe(join(installRoot, 'bin/deepseek-harness'))
     const installed = await execFileAsync(join(bin, 'deepseek-harness'), ['--help'], { encoding: 'utf8' })
     expect(installed.stdout).toBe('installed\n')
-    if (process.platform === 'darwin') {
-      expect(await readFile(join(appDir, 'DeepSeek Harness.app/Contents/Info.plist'), 'utf8')).toBe('<plist/>\n')
-    }
   })
 })

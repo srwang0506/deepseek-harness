@@ -10,6 +10,40 @@ It uses an architecture where **everything is a plugin**, and is powered by [Cor
 
 DeepSeek Harness is currently in _developer preview_ and is iterating rapidly. **THERE WILL BE COMPATIBILITY-BREAKING CHANGES.**
 
+## Native releases
+
+This fork publishes a macOS App, a macOS CLI, and Linux server CLIs. Choose one installation scenario; the App and CLI are not installed together. Every installer verifies the release checksum and backs up an existing target before replacement.
+
+### macOS desktop App
+
+Apple silicon only; installs the graphical App without the CLI:
+
+```sh
+curl -fsSL https://github.com/srwang0506/deepseek-harness/releases/latest/download/install.sh | sh -s -- macos-app
+```
+
+### macOS CLI
+
+Apple silicon only; installs `deepseek-harness` without the desktop App:
+
+```sh
+curl -fsSL https://github.com/srwang0506/deepseek-harness/releases/latest/download/install.sh | sh -s -- macos-cli
+```
+
+### Linux x64 server
+
+```sh
+curl -fsSL https://github.com/srwang0506/deepseek-harness/releases/latest/download/install.sh | sh -s -- linux-x64
+```
+
+### Linux ARM64 server
+
+```sh
+curl -fsSL https://github.com/srwang0506/deepseek-harness/releases/latest/download/install.sh | sh -s -- linux-arm64
+```
+
+The CLI is linked as `~/.local/bin/deepseek-harness`. DeepSeek remains the default model; GPT models are optional through browser OAuth, device-code OAuth, or an OpenAI Platform API key. See the [native distribution guide](desktop/README.md) for paths, server login, SSH tunneling, builds, and security notes.
+
 ## Run
 
 ### Run from `npm`
