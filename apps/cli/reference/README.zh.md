@@ -80,7 +80,7 @@ dsh web --help
 
 第三方提供方是存储在 `$DSH_HOME/settings.yaml` 中 `llm-pi-ai` settings 段里的 pi-ai 路由，与网页版 Models 页编辑的是同一份文档。`dsh providers` 列出已配置路由；`dsh provider add <name> --api-key-env <ENV>` 启用一个 pi-ai 目录路由（openai、anthropic、gemini 等），再加上 `--base-url <url> --model <id>` 则声明一个自定义 OpenAI 兼容 endpoint（协议 `openai-completions`）。`dsh provider remove <name>` 删除路由。API key 在请求时从指定的环境变量或凭据引用读取。
 
-`dsh doctor` 打印环境诊断——Node 版本、`DEEPSEEK_API_KEY` 是否设置、harness home 是否可写、OpenAI GPT 登录状态——任一项失败时以非零退出码结束。
+`dsh doctor` 打印环境诊断——Node 版本、`DEEPSEEK_API_KEY` 是否设置、harness home 是否可写、OpenAI GPT 登录状态——任一项失败时以非零退出码结束。`dsh completion [bash|zsh]` 打印针对启动器自有子命令的静态补全脚本。
 
 ## 共享部署行为
 

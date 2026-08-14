@@ -80,7 +80,7 @@ The optional OpenAI GPT provider authenticates through `dsh login` (browser OAut
 
 Third-party providers are pi-ai routes stored in the `llm-pi-ai` settings section of `$DSH_HOME/settings.yaml`, the same document the web Models page edits. `dsh providers` lists the configured routes; `dsh provider add <name> --api-key-env <ENV>` enables a pi-ai catalog route (openai, anthropic, gemini, …), and adding `--base-url <url> --model <id>` declares a custom OpenAI-compatible endpoint (protocol `openai-completions`). `dsh provider remove <name>` deletes a route. API keys are read from the named environment variable or credential reference at request time.
 
-`dsh doctor` prints environment diagnostics — the Node version, whether `DEEPSEEK_API_KEY` is set, the harness home's writability, and the OpenAI GPT login state — and exits nonzero when any check fails.
+`dsh doctor` prints environment diagnostics — the Node version, whether `DEEPSEEK_API_KEY` is set, the harness home's writability, and the OpenAI GPT login state — and exits nonzero when any check fails. `dsh completion [bash|zsh]` prints a static completion script for the launcher-owned subcommands.
 
 ## Shared deployment behavior
 

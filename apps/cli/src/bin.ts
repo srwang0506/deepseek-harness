@@ -72,6 +72,11 @@ switch (invocation.mode) {
     await runDoctor()
     break
   }
+  case 'completion': {
+    const { runCompletion } = await import('./completion.ts')
+    runCompletion(invocation.shell)
+    break
+  }
   case 'provider': {
     const { addProvider, listProviders, removeProvider } = await import('./provider.ts')
     if (invocation.action === 'list') {

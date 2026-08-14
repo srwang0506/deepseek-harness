@@ -73,6 +73,13 @@ interface DoctorInvocation {
   mode: 'doctor'
 }
 
+/** Print a shell completion script. */
+interface CompletionInvocation {
+  mode: 'completion'
+  /** `bash` (default) or `zsh`. */
+  shell: string | undefined
+}
+
 /** Manage pi-ai provider routes. */
 interface ProviderInvocation {
   mode: 'provider'
@@ -98,6 +105,7 @@ export type DshInvocation =
   | LogoutInvocation
   | ProviderInvocation
   | DoctorInvocation
+  | CompletionInvocation
 
 /** Launcher flags shared by the default command and the `web` alias. */
 interface BootOptions {
@@ -274,6 +282,14 @@ export function parseDshArgs(argv: readonly string[], version: string): DshInvoc
     rejectParentOptions('doctor')
     resolved = { mode: 'doctor' }
   })
+
+  const completion = program.command('completion').description('print a shell completion script')
+  completion
+    .argument('[shell]', 'bash (default) or zsh')
+    .action((shell: string | undefined) => {
+      rejectParentOptions('completion')
+      resolved = { mode: 'completion', shell }
+    })
 
   const provider = program.command('provider').description('manage pi-ai provider routes (third-party models)')
   const providerAdd = provider.command('add').description('configure a catalog route or a custom OpenAI-compatible endpoint')

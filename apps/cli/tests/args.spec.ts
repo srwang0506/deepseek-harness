@@ -78,6 +78,8 @@ describe('parseDshArgs', () => {
     expect(parse(['status'])).toEqual({ mode: 'status' })
     expect(parse(['logout'])).toEqual({ mode: 'logout' })
     expect(parse(['doctor'])).toEqual({ mode: 'doctor' })
+    expect(parse(['completion'])).toEqual({ mode: 'completion', shell: undefined })
+    expect(parse(['completion', 'zsh'])).toEqual({ mode: 'completion', shell: 'zsh' })
   })
 
   it('routes the pi-ai provider management commands', () => {
