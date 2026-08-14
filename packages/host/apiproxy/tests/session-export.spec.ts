@@ -126,6 +126,14 @@ async function responseBytes(response: Response): Promise<Uint8Array> {
 }
 
 describe('session export compression config', () => {
+  it('accepts a host workspace independently from the process cwd', () => {
+    expect(ApiProxyService.Config({ cwd: '/workspace' })).toEqual({
+      cwd: '/workspace',
+      sessionExportCompressionLevel: 6,
+      coldBlankProbeMaxBytes: 1024,
+    })
+  })
+
   it('defaults to level 6 and rejects values outside the integer 0-9 range', () => {
     expect(ApiProxyService.Config({})).toEqual({
       sessionExportCompressionLevel: 6,

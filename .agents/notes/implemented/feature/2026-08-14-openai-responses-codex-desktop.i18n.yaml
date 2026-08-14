@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-08-14-openai-responses-codex-desktop.md
-2026-08-14-openai-responses-codex-desktop.md: 30ee04d652178af5a69291e57b5d4a424d99ad72
-2026-08-14-openai-responses-codex-desktop.zh.md: 9b085d6a687ad1b1c116cedba1ad46db807de3ba
+2026-08-14-openai-responses-codex-desktop.md: 77dc755b5030b02370ef1c2a664f7252a24eee2e
+2026-08-14-openai-responses-codex-desktop.zh.md: 25f24689befa2a736bc775406f62c14e2d326dc0

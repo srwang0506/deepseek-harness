@@ -733,6 +733,12 @@ export interface Config {
 /** Gateway plugin configuration. */
 export interface Config {
   /**
+   * Default project directory for host metadata and newly created sessions.
+   * Defaults to the process cwd. Desktop launchers may set this independently
+   * so the backend process itself can remain on a launch-safe filesystem.
+   */
+  cwd?: string
+  /**
    * Whether this deployment can hand paths to a native desktop opener —
    * the `hasDocument` capability the agent-preset roster reports. Absent,
    * the platform is asked (macOS/Windows/WSL yes; Linux only with a display

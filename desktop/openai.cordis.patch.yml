@@ -5,6 +5,22 @@
 - id: llm-deepseek
   disabled: true
 
+# Finder-launched processes keep their physical cwd on APFS. DSH_CWD remains
+# the single logical workspace for session metadata, filesystem resolution,
+# and the shared sandbox boundary (important when the workspace is on exFAT).
+- id: api-gateway
+  config:
+    cwd: !!js process.env.DSH_CWD ?? process.cwd()
+
+- id: fs-sandbox
+  config:
+    cwd: !!js process.env.DSH_CWD ?? process.cwd()
+
+- id: sandbox-policy
+  config:
+    mode: !!js process.env.DSH_PERMISSION_MODE ?? 'workspace-write'
+    workspaceRoot: !!js process.env.DSH_CWD ?? process.cwd()
+
 - insert:
     # Desktop-only Codex integration. The official CLI owns account login and
     # app-server execution; Harness never copies or repurposes OAuth tokens.

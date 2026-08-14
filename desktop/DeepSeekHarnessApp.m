@@ -96,7 +96,7 @@ static NSString *const DSHAppName = @"deepseek harness";
 }
 
 - (NSURL *)workspaceDirectory {
-  NSURL *preferred = [NSURL fileURLWithPath:@"/Volumes/sirui" isDirectory:YES];
+  NSURL *preferred = [NSURL fileURLWithPath:@"/Volumes/sirui/deepseek-harness" isDirectory:YES];
   BOOL isDirectory = NO;
   if ([NSFileManager.defaultManager fileExistsAtPath:preferred.path isDirectory:&isDirectory] && isDirectory) {
     return preferred;
@@ -113,6 +113,7 @@ static NSString *const DSHAppName = @"deepseek harness";
   ];
   environment[@"PATH"] = [paths componentsJoinedByString:@":"];
   environment[@"DSH_HOME"] = dshHome.path;
+  environment[@"DSH_CWD"] = [self workspaceDirectory].path;
   environment[@"DSH_TELEMETRY_DISABLED"] = @"1";
   environment[@"DSH_TOOLS_MODE"] = @"both";
   return environment;
@@ -233,10 +234,13 @@ static NSString *const DSHAppName = @"deepseek harness";
 
   NSTask *task = [NSTask new];
   task.executableURL = [self bundledNode];
-  task.currentDirectoryURL = [self workspaceDirectory];
+  // Keep the process cwd on APFS. Finder-launched processes can block in
+  // getcwd() when their physical cwd is an exFAT volume; DSH_CWD above carries
+  // the independently configured logical workspace into every Harness layer.
+  task.currentDirectoryURL = NSFileManager.defaultManager.homeDirectoryForCurrentUser;
   task.environment = [self processEnvironment:dshHome];
   task.arguments = @[
-    [[self dshEntrypoint] path],
+    [self dshEntrypoint].path,
     @"web", @"--patch",
     [[[self resources] URLByAppendingPathComponent:@"config/openai.cordis.patch.yml"] path],
     @"--port", @"0"
@@ -244,6 +248,7 @@ static NSString *const DSHAppName = @"deepseek harness";
 
   NSPipe *standardOutput = [NSPipe pipe];
   NSPipe *standardError = [NSPipe pipe];
+  task.standardInput = [NSFileHandle fileHandleWithNullDevice];
   task.standardOutput = standardOutput;
   task.standardError = standardError;
   __weak typeof(self) weakSelf = self;
@@ -334,7 +339,7 @@ static NSString *const DSHAppName = @"deepseek harness";
   NSTask *task = [NSTask new];
   task.executableURL = [self bundledNode];
   task.arguments = [@[[self codexEntrypoint].path] arrayByAddingObjectsFromArray:arguments];
-  task.currentDirectoryURL = [self workspaceDirectory];
+  task.currentDirectoryURL = NSFileManager.defaultManager.homeDirectoryForCurrentUser;
   task.environment = [self processEnvironment:dshHome];
   NSPipe *output = [NSPipe pipe];
   task.standardOutput = output;

@@ -6,7 +6,7 @@ This directory owns the Apple-silicon desktop distribution. It wraps the officia
 
 ## Install and launch
 
-The build produces `deepseek harness.app` and `deepseek-harness-macos-arm64.zip`. Copy the app to `/Volumes/sirui` or `/Applications`, then open it from Finder. The launcher uses `/Volumes/sirui` as the workspace when that volume is mounted and otherwise falls back to the current user's home directory.
+The build produces `deepseek harness.app` and `deepseek-harness-macos-arm64.zip`. Install the app in `/Applications`, then open it from Finder; the ZIP can remain on `/Volumes/sirui`. An expanded application should not run directly from an exFAT volume because macOS AppleDouble files can invalidate its bundle signature. The launcher keeps the backend's physical working directory on APFS while configuring `/Volumes/sirui/deepseek-harness` as the logical Harness workspace when that checkout exists; otherwise both fall back to the current user's home directory.
 
 The distribution is ad-hoc signed rather than notarized. On a machine that quarantines the downloaded ZIP, use Finder's **Control-click → Open** flow for the first launch.
 

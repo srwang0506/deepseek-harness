@@ -6,7 +6,7 @@
 
 ## 安装与启动
 
-构建会生成 `deepseek harness.app` 和 `deepseek-harness-macos-arm64.zip`。把 App 复制到 `/Volumes/sirui` 或 `/Applications`，再从 Finder 打开。若 `/Volumes/sirui` 已挂载，启动器会把它作为工作区；否则回退到当前用户的主目录。
+构建会生成 `deepseek harness.app` 和 `deepseek-harness-macos-arm64.zip`。请把 App 安装到 `/Applications` 后从 Finder 打开；ZIP 可以继续保存在 `/Volumes/sirui`。不要直接从 exFAT 卷运行解压后的 App，因为 macOS AppleDouble 文件可能让 bundle 签名失效。启动器会让后端进程的实际工作目录留在 APFS；若 `/Volumes/sirui/deepseek-harness` checkout 存在，则把它独立配置为 Harness 的逻辑工作区，否则两者都回退到当前用户的主目录。
 
 发行包使用 ad-hoc 签名，没有经过 Apple 公证。若从 ZIP 解压后被系统隔离，首次启动请在 Finder 中按住 Control 点击 App，再选择“打开”。
 

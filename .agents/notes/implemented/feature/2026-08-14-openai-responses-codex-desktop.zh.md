@@ -10,7 +10,7 @@ Status: implemented
 
 ## 决策
 
-仓库提供 Apple 芯片桌面构建路径。原生 AppKit 启动器内置 Node、构建后的 Harness Web 应用、生产依赖闭包、官方 Codex CLI 和以 OpenAI 为主的 Cordis 补丁。它在操作系统分配的端口上启动私有 loopback Web 服务，优先使用 `/Volumes/sirui` 作为工作区，把部署状态和日志保存在用户 Library 中，并在 App 退出时终止子服务；最终打包为经过 ad-hoc 签名的 `deepseek harness.app` 和 ZIP。
+仓库提供 Apple 芯片桌面构建路径。原生 AppKit 启动器内置 Node、构建后的 Harness Web 应用、生产依赖闭包、官方 Codex CLI 和以 OpenAI 为主的 Cordis 补丁。它在操作系统分配的端口上启动私有 loopback Web 服务，让实际进程 cwd 留在 APFS，同时把 `/Volumes/sirui/deepseek-harness` 统一配置为 host、文件系统和 sandbox 服务的首选逻辑工作区；部署状态和日志保存在用户 Library 中，App 退出时会终止子服务。最终打包为经过 ad-hoc 签名的 `deepseek harness.app`，以及适合存放在 exFAT 上的无元数据 ZIP。
 
 `apps/desktop-runtime/package.json` 是仅用于部署的清单。它包含 Codex 提供方及其运行时闭包，但不改变通用 `@deepseek-ai/dsh` 应用的依赖图。启动时，App 会维护一条从桌面 DSH home 指向内置 Codex 提供方的 profile 本地符号链接，让普通 Profile 解析能够找到这项显式安装的集成。若该路径已经存在且不是符号链接，App 会保留用户状态，并以可归因错误终止启动，而不是替换它。这个部署专用 opt-in 是对通用生产排除决策的补充，并未取代它。
 
