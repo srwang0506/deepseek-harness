@@ -8,22 +8,26 @@
 
 ## 配置
 
-按提供方配置凭据、模型 catalog 与部署特定传输设置，并以提供方路由本身为键。`apiKeyEnv` 是按请求解析的凭据*引用*，因此机密不进入该文件。省略它会把认证交给已安装的 pi-ai 提供方：支持密钥的路由可使用自身的环境发现，OAuth 路由则读取显式配置的 `credentialStorePath`。已配置却解析不出任何值的密钥引用会以 `MISSING_CREDENTIAL` 失败，不会落到某个无关环境密钥。一条凭据服务该路由下的全部模型。
+按提供方配置凭据、模型 catalog 与部署特定传输设置，并以提供方路由本身为键。`apiKeyEnv` 是按请求解析的凭据*引用*，因此机密不进入该文件。省略它会把认证交给已安装的 pi-ai 提供方：支持密钥的路由可使用自身的环境发现，OAuth 路由则读取显式配置的 `credentialStorePath`。嵌入 App 也可以为逻辑 `openai-codex` 路由存储 OAuth 或 API-key 凭据。已配置却解析不出任何值的密钥引用会以 `MISSING_CREDENTIAL` 失败，不会落到某个无关环境密钥。一条凭据服务该路由下的全部模型。
 
 ```yaml
 - id: llm
   name: '@deepseek-ai/dsh-llm-pi-ai'
   config:
-    # 任何仅支持 OAuth 的 profile 都需要它；请放在仓库之外。
+    # Required by any OAuth-only profile. Keep this outside the repository.
     credentialStorePath: /absolute/private/path/pi-ai-auth.json
     providers:
-      # OAuth catalog 路由。登录交互由嵌入 App 拥有；Models 用该存储
-      # 完成请求认证和加锁的 token 刷新。
+      # Logical GPT route. The embedding app may store ChatGPT OAuth or an
+      # OpenAI API key; OAuth uses the store for locked token refresh.
       openai-codex:
-        displayName: OpenAI (ChatGPT OAuth)
+        displayName: OpenAI GPT
         reasoning: high
         cacheRetention: long
         transport: auto
+        openAIResponses:
+          store: true
+          previousResponseId: true
+          reasoningContext: all_turns
       # Catalog route: endpoint, protocol, and models all come from pi-ai.
       openai:
         apiKeyEnv: OPENAI_API_KEY
@@ -120,7 +124,7 @@ profile 的 `models` 列表是*替换*该路由已安装 catalog，而不是扩�
 
 适配器经由一个 thunk **每操作读取一次** profile，而非在构造期冻结。插件在可选的 `ctx.settings` seam 上用同一份 `Config` schema 注册 `llm-pi-ai` namespace，并以其 `cordis.yml` 条目为组合 `base`；由于 `providers` 是字典，base 与用户的 `llm-pi-ai:` settings 分节**按提供方**合并：用户可以新增路由、覆盖组合路由的单个字段，或把路由指向另一个 proxy，全部在下一次请求生效，无需重启。未挂载 settings 服务时，仅由 entry 配置驱动适配器，行为不变。
 
-API key 在每次流调用时通过 `apiKeyEnv` 与可选的 `ctx.credentials` seam 解析；未挂载该 seam 时，适配器只读取该引用指向的环境变量。没有点名密钥的 profile 会把认证交给 pi-ai 原生提供方。对仅支持 OAuth 的路由，`credentialStorePath` 必须存在且为绝对路径；其文件权限为仅所有者可读写（`0600`），目录为仅所有者可访问（`0700`），完整文档原子替换与跨进程锁让登录及自动 token 刷新成为一次串行 read-modify-write。交互式 `Models.login()` 界面由嵌入 App 拥有。每个解析出的 API key 都会在使用前去除首尾空白并校验格式，因此 HTTP 标头无法承载的值会被拒绝，而不是以语义不明的 `fetch` `TypeError` 形式浮现；这种拒绝会抛出 `LlmError('INVALID_CREDENTIAL')`，点名失败的路由与凭据引用，但绝不透露密钥的任何部分。路由集合与每条路由捕获的重试策略是注册级事实：两者任一变化时，插件都会原子地替换自己的注册（同一适配器实例，候选集合先经校验），因此某条路由若已被另一适配器占有，先前的路由会继续服务，而改回可用配置时注册会重新生效。提供方键的顺序绝不算作变化。本适配器无法服务的分节会在写入处被拒——注册的 `validate` 会解析整份 profile 集合，因此 `ctx.settings.mutate` 以 resolver 自身的错误拒绝（该协议将其报为 `settings-rejected`），什么都不会存储。已存储分节若因其他途径变得不可服务——比如外部编辑了 `settings.yaml`——则由 settings seam 保留该 namespace 最后可用的值并告警。entry 配置本身仍会使插件加载失败；而 llm 注册表拒绝的路由（已被另一适配器族占有的那种）会被记录下来，先前注册的路由继续服务。
+API key 在每次流调用时通过 `apiKeyEnv` 与可选的 `ctx.credentials` seam 解析；未挂载该 seam 时，适配器只读取该引用指向的环境变量。没有点名密钥的 profile 会把认证交给 pi-ai 原生提供方。对仅支持 OAuth 的路由，`credentialStorePath` 必须存在且为绝对路径；其文件权限为仅所有者可读写（`0600`），目录为仅所有者可访问（`0700`），完整文档原子替换与跨进程锁让登录及自动 token 刷新成为一次串行 read-modify-write。交互式登录界面由嵌入 App 拥有，它也可以在同一文档中为 `openai-codex` 存储规范 API-key 凭据。每个解析或存储的 API key 都会在使用前去除首尾空白并校验格式，因此 HTTP 标头无法承载的值会被拒绝，而不是以语义不明的 `fetch` `TypeError` 形式浮现；这种拒绝会抛出 `LlmError('INVALID_CREDENTIAL')`，点名失败的路由与凭据来源，但绝不透露密钥的任何部分。路由集合与每条路由捕获的重试策略是注册级事实：两者任一变化时，插件都会原子地替换自己的注册（同一适配器实例，候选集合先经校验），因此某条路由若已被另一适配器占有，先前的路由会继续服务，而改回可用配置时注册会重新生效。提供方键的顺序绝不算作变化。本适配器无法服务的分节会在写入处被拒——注册的 `validate` 会解析整份 profile 集合，因此 `ctx.settings.mutate` 以 resolver 自身的错误拒绝（该协议将其报为 `settings-rejected`），什么都不会存储。已存储分节若因其他途径变得无法服务——比如外部编辑了 `settings.yaml`——则由 settings seam 保留该 namespace 最后可用的值并告警。entry 配置本身仍会使插件加载失败；而 llm 注册表拒绝的路由（已被另一适配器族占有的那种）会被记录下来，先前注册的路由继续服务。
 
 适配器通过 `ctx.llm.listModels(provider)` 公开每条已配置路由的模型。这是从请求路径所用的同一个 pi-ai `Models` 集合读取的提供方无关 selector 元数据，因此发现不会创建第二个模型注册表。`ctx.llm.resolveModelInfo(provider, model)` 会执行一次精确 descriptor 查找，并返回其身份、上下文窗口、已配置输出上限和可选思考级别，让权威元数据保留在拥有路由的适配器上，而非消费方。模型**已配置**的 `maxTokens` 会成为 seam 的 `defaultMaxTokens`，因此未点名输出上限的请求会携带部署选定的那一个；而从已安装 catalog 继承来的值是模型的输出**能力**，绝不会自行变成请求默认值。
 
@@ -130,7 +134,7 @@ API key 在每次流调用时通过 `apiKeyEnv` 与可选的 `ctx.credentials` s
 
 顶层 OAuth 字段是 `credentialStorePath`。受支持的 profile 字段是 `apiKeyEnv`、`displayName`、`api`、`baseURL`、`models`、`modelOverrides`、`compat`、`defaultContextWindow`、`defaultMaxTokens`、`defaultInput`、`headers`、`reasoning`、`thinkingBudgets`、`cacheRetention`、`openAIResponses`、`transport`、`timeoutMs`、`websocketConnectTimeoutMs`、`streamIdleTimeoutMs` 和 `retryPolicy`。每个 profile 的可选重试策略都会与该提供方路由一同捕获；省略时使用有界的常规默认值。流空闲间隔必须是正的有限 Node 定时器延迟，默认为五分钟，且只覆盖未完成提供方读取，不包括消费方思考时间。若已配置标头中有同名项，则以 Harness 应用归因为准。
 
-`openAIResponses` 是仅作用于第一方 Responses 的控制块。`store` 会在 OpenAI 侧保存响应状态；`previousResponseId` 要求 `store: true`，并且仅当最近一条持久化 assistant 响应来自完全相同的路由和模型时，才把它的响应 id 作为 `previous_response_id` 发送，并用该响应之后的 Harness 消息替代由提供方保存的前缀。出现外部或不兼容的 assistant 响应时，会退回到完整持久化历史。`reasoningContext: all_turns` 会发送 `reasoning.context: "all_turns"`。这些开关不会改变 Chat Completions 或其他提供方协议，也不会把 Codex OAuth 登录变成 API 凭据。
+`openAIResponses` 是仅作用于第一方 Responses 的控制块。`store` 会在 OpenAI 侧保存响应状态；`previousResponseId` 要求 `store: true`，并且仅当最近一条持久化 assistant 响应来自完全相同的路由和模型时，才把它的响应 id 作为 `previous_response_id` 发送，并用该响应之后的 Harness 消息替代由提供方保存的前缀。出现外部或不兼容的 assistant 响应时，会退回到完整持久化历史。`reasoningContext: all_turns` 会发送 `reasoning.context: "all_turns"`。这些开关不会改变 Chat Completions 或 ChatGPT Codex OAuth 传输。在逻辑 `openai-codex` 路由中存储 API key 会选择标准 OpenAI Responses 传输，此时这些开关会生效。
 
 适配器强制 pi-ai SDK `maxRetries` 为零，因此一次 `stream()` 调用只会发起一次提供方请求。已移除 profile 字段 `maxRetries` 和 `maxRetryDelayMs` 会使加载失败，而不是静默倍增或隐藏单独组合的 agent（智能体）级重试预算。空闲超时会 abort SDK 的稳定请求信号，并以 `TIMEOUT` 呈现；较早的调用方 abort 仍为 `ABORTED`。
 
@@ -150,7 +154,7 @@ API key 在每次流调用时通过 `apiKeyEnv` 与可选的 `ctx.credentials` s
 
 每次解析产出一份**不可变**快照——profiles 加上一个持有各路由所建 `Provider` 的 `createModels()` 集合——每个操作都在自己第一个 `await` 之前整体捕获一份快照。配置变化会构造**新**集合，而不是改动正在被使用的那个：`Models.streamSimple()` 是惰性的，它在流首次被消费时才解析 provider，而那已在 credential await 之后，因此改动共享集合会让一个在旧配置下开始的请求在新配置下结束，或者撞上一个已不存在的 provider。这正是 seam 的每步调用冻结（`llm.prepareCall()`）能贯通到底的原因——回复途中切换模型会在下一步生效，绝不会影响在途的那一步。请求经 `Models.streamSimple()` 抵达提供方。保持 catalog 协议不变的 catalog 路由会**复用**已安装提供方，只替换其模型列表，因为该提供方持有本包无法重建的 API 实现——Bedrock 经由独立入口加载其 Smithy 模块——从零件重建会静默收窄可用提供方的范围。其余路由都由 `createProvider()` 基于 `supportedProtocols()` 背后的协议表构造，表中条目正是 pi-ai 自己的提供方工厂所用的同一批 factory。
 
-API key 绝不进入该集合。harness 在请求抵达 pi-ai 之前经自身 seam 解析路由密钥，并作为请求的 `apiKey` 选项传入，而 pi-ai 将其视为优先级最高的 auth 覆盖。配置 `credentialStorePath` 后，该集合会持有持久化存储，但只用于 OAuth 等提供方原生存储型凭据；这样 pi-ai 可执行加锁刷新，又不改变 Harness 的密钥引用语义。没有点名密钥的路由会把认证交给自身提供方。
+API key 绝不进入提供方定义。harness 在请求抵达 pi-ai 之前经自身 seam 解析路由密钥，并作为请求的 `apiKey` 选项传入，而 pi-ai 将其视为优先级最高的 auth 覆盖。配置 `credentialStorePath` 后，快照还会持有提供方原生凭据的持久化存储；OAuth 用它执行加锁刷新。如果逻辑 `openai-codex` 路由存储的是 API key，适配器会针对该请求把所选 catalog 模型重新绑定到 pi-ai 的标准 `openai` Responses 提供方，把密钥作为请求覆盖传入，并在原始路由与模型下记录回放元数据。既未点名密钥、也没有已存凭据的路由会把认证交给自身提供方。
 
 所选模型 descriptor 提供协议实现。这包括原生 API 差异，例如 descriptor 使用 Responses API 而非 Chat Completions 的 OpenAI 模型；harness 适配器不会按模型名称硬编码端点选择。
 
@@ -206,7 +210,7 @@ pi-ai 事件会变为 harness 推理、文本、工具调用、usage 与 finish 
 
 ## 已知限制与暂缓事项
 
-- **OAuth 登录界面由组合拥有**：适配器能够持久化并刷新提供方原生 OAuth 凭据，但不能凭空产生获取凭据所需的交互界面。因此通用可配置提供方目录仍会隐藏仅支持 OAuth 的 catalog 提供方，直到某个组合显式声明该路由并提供 `credentialStorePath`；该组合还必须自行调用 pi-ai `Models.login()`。`openai-codex` 是已安装 catalog 中仅支持 OAuth 的路由。
+- **存储型登录界面由组合拥有**：适配器可以消费已存 OAuth 或 API-key 凭据，并刷新提供方原生 OAuth 凭据，但不能凭空产生获取凭据所需的交互界面。因此通用可配置提供方目录仍会隐藏仅支持 OAuth 的 catalog 提供方，直到某个组合显式声明该路由并提供 `credentialStorePath`；该组合还必须自行调用 pi-ai `Models.login()`，或写入校验过的规范 API-key 凭据。`openai-codex` 是已安装 catalog 中仅支持 OAuth 的传输路由。
 - **提供方自带的凭据发现只读进程环境**：不指定凭据的路由交由 catalog 提供方自行解析，而它探测的是环境变量（`AZURE_OPENAI_API_KEY`、`AWS_PROFILE`、`AWS_ACCESS_KEY_ID` 以及各提供方自己的那一组）。它不读任何本地凭据目录，因此只有 `~/.aws/credentials` 而未导出 `AWS_PROFILE` 会被解析为未配置；由 harness 凭据 seam 保管的值，除非进程环境里也有，否则对它不可见。
 - **settings 能新增或覆盖路由，但不能移除组合路由**：用户层合并在组合 `base` 之上，因此删除 `cordis.yml` 提供的提供方属于组合变更；对该 namespace 执行 `replace` 只会重置用户层。
 - **分层合并对字典键没有删除语义**：settings seam 把组合 `base` 与用户层按键递归合并，因此 base 声明的某个 `reasoningEfforts` 档位、`modelOverrides` 条目或 `compat` 字段，用户层只能覆盖、无法移除——而 `reasoningEfforts` 里缺席本身*就是*语义（「不提供」），于是 base 声明过的档位会一直被提供。只有 `cordis.yml` entry config 为用户层正在编辑的同一模型声明了按模型推理字段才会触发；受支持的姿态是把这些字段留给 settings 文档（shipped 组合以 dormant 方式挂载该适配器），且 `models` 列表是数组、整体替换，这是带内的解决办法。

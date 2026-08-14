@@ -12,17 +12,19 @@
 
 App 把部署状态保存在 `~/Library/Application Support/DeepSeek Harness`，后端日志写入 `~/Library/Logs/DeepSeek Harness/backend.log`。可通过“deepseek harness → 显示后端日志”定位日志，通过“显示 → 重新载入”刷新 Web 界面。
 
-## 默认 DeepSeek 与可选 OpenAI OAuth
+## 默认 DeepSeek 与可选 OpenAI GPT
 
-发行包保留官方 DeepSeek 路由，并继续以 `deepseek-official/deepseek-v4-flash` 作为主 Agent 默认模型。桌面补丁只把 pi-ai catalog 中的 `openai-codex` 加为可选模型提供方；它不安装 Codex CLI、不挂载 Codex 子代理，也不替换 Harness Agent loop。
+发行包保留官方 DeepSeek 路由，并继续以 `deepseek-official/deepseek-v4-flash` 作为主 agent 默认模型。桌面补丁只把 pi-ai 的逻辑路由 `openai-codex` 加为可选模型提供方；它不安装 Codex CLI、不挂载 Codex subagent，也不替换 Harness agent loop。
 
-选择“deepseek harness → OpenAI OAuth 登录…”即可打开 pi-ai 的 ChatGPT 订阅 OAuth 流程。“OpenAI OAuth 状态”会检查凭据，并在需要时刷新；“退出 OpenAI OAuth”会删除凭据。Token 保存在 `~/Library/Application Support/DeepSeek Harness` 下仅限文件所有者读取的 JSON 文档中，刷新操作通过跨进程文件锁串行化。
+未配置 OpenAI 凭据时选择 OpenAI GPT 模型，App 会自动暂停模型选择，并提供三种方式：ChatGPT 浏览器 OAuth、ChatGPT 设备码 OAuth，或 OpenAI Platform API key。浏览器与设备码登录使用 ChatGPT 订阅权限；API-key 方式使用单独计费的 Platform 权限。App 菜单中的“OpenAI 登录或切换方式…”可主动打开同一个选择界面。“OpenAI 登录状态”会报告已存储的方式，“退出 OpenAI”会删除凭据。
 
-登录后，在 Harness 正常模型选择器中选择 `openai-codex` 下的 GPT 模型（例如 `gpt-5.6-sol`）即可。Harness 的 loop、本地工具、提示词、会话与 Agent 编排全部照旧，只切换所选 LLM 提供方。
+OAuth token 与 API key 保存在 `~/Library/Application Support/DeepSeek Harness` 下仅限文件所有者读取的 JSON 文档中；OAuth 刷新通过跨进程文件锁串行化。API key 从密码输入框经标准输入传给原生 helper，绝不出现在其命令行参数中。认证成功后，被暂停的 `openai-codex` 模型选择会继续。Harness 的 loop、本地工具、提示词、会话与 agent 编排全部照旧，只切换所选 LLM 提供方。
 
 ## Pi OpenAI 行为
 
-可选路由使用 pi-ai 原生 `openai-codex-responses` 实现，启用 high 推理、长时 cache、自动传输选择、Harness session id、提供方回放元数据、OAuth 自动刷新，以及模型 catalog 提供的推理档位（有能力时包括 `xhigh` 与 `max`）。ChatGPT 的 Codex 后端要求 `store: false`；pi-ai 会通过它支持的传输方式处理续接，而不是套用 API-key Responses 路由的服务端存储开关。
+ChatGPT 浏览器与设备码登录使用 pi-ai 原生 `openai-codex-responses` 实现，并支持 OAuth 自动刷新。ChatGPT 的 Codex 后端要求 `store: false`，因此 pi-ai 会通过它支持的传输方式处理续接。API key 保持界面中相同的 `openai-codex` 路由与模型选择，但在内部经 pi-ai 的标准 OpenAI Responses 提供方分派；该路径启用服务端响应存储、持久化 `previous_response_id` 与 `reasoning.context: "all_turns"`。回放元数据会在这次内部分派中保留逻辑路由。
+
+两条路径都使用 high 推理、长时 cache、自动传输选择、Harness session id、提供方回放元数据，以及 catalog 提供的推理档位；所选模型具备能力时包括 `xhigh` 与 `max`。
 
 Harness 的本地 Shell、补丁编辑、Skills、MCP、工具搜索、程序化工具调用和多 Agent 编排仍由 Harness 自己提供，不会伪装成 OpenAI Hosted Shell 调用。这个桌面 profile 刻意不安装、也不启用 Claude Code。
 

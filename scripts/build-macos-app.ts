@@ -209,6 +209,7 @@ async function main(): Promise<void> {
     join(repoRoot, 'desktop/desktop.cordis.patch.yml'),
     join(resources, 'config/desktop.cordis.patch.yml'),
   )
+  await copyFile(join(repoRoot, 'desktop/openai-auth-bridge.js'), join(resources, 'openai-auth-bridge.js'))
   await copyFile(join(repoRoot, 'desktop/openai-oauth.mjs'), join(deployedDsh, 'openai-oauth.mjs'))
 
   const executable = join(macOS, 'deepseek-harness')

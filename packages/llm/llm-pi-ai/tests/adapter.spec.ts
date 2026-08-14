@@ -12,6 +12,7 @@ import * as LlmPiAi from '@deepseek-ai/dsh-llm-pi-ai'
 import { PiAiAdapter } from '@deepseek-ai/dsh-llm-pi-ai'
 import { MAX_TIMER_DELAY_MS } from '@deepseek-ai/dsh-timeout'
 import { getBuiltinModels } from '@earendil-works/pi-ai/providers/all'
+import type { CredentialStore } from '@earendil-works/pi-ai'
 import { resolveProfiles } from '../src/config.ts'
 import { assemble } from './assemble.ts'
 import { closeMockServers, mockServer, textEvents } from './mock-server.ts'
@@ -196,6 +197,47 @@ describe('PiAiAdapter provider routing', () => {
     const result = await assemble(ctx, { provider: 'openai', model: 'gpt-4.1', messages: [] })
     expect(result.finish.kind).toBe('error')
     expect(server.paths).toEqual(['/v1/responses'])
+  })
+
+  it('routes a stored API key on the visible ChatGPT route through standard OpenAI Responses', async () => {
+    const server = await mockServer([{ status: 401, body: JSON.stringify({ error: { message: 'captured' } }) }])
+    const credentials: CredentialStore = {
+      read: provider => Promise.resolve(provider === 'openai-codex'
+        ? { type: 'api_key', key: 'stored-openai-key' }
+        : undefined),
+      list: () => Promise.resolve([{ providerId: 'openai-codex', type: 'api_key' }]),
+      modify: (_provider, update) => update(undefined),
+      delete: () => Promise.resolve(),
+    }
+    const adapter = new PiAiAdapter({
+      profiles: () => resolveProfiles({
+        'openai-codex': {
+          baseURL: `${server.url}/v1`,
+          reasoning: 'high',
+          openAIResponses: { store: true, reasoningContext: 'all_turns' },
+        },
+      }),
+      resolveApiKey: () => Promise.resolve(undefined),
+      credentials: () => credentials,
+    })
+    const ctx = new Context()
+    await ctx.plugin(LlmRuntime)
+    ctx.llm.registerAdapter(['openai-codex'], adapter)
+
+    const result = await assemble(ctx, {
+      provider: 'openai-codex',
+      model: 'gpt-5.6-sol',
+      messages: [],
+    })
+
+    expect(result.finish.kind).toBe('error')
+    expect(server.paths).toEqual(['/v1/responses'])
+    expect(server.headers[0]?.authorization).toBe('Bearer stored-openai-key')
+    expect(server.requests[0]).toMatchObject({
+      model: 'gpt-5.6-sol',
+      store: true,
+      reasoning: { effort: 'high', context: 'all_turns' },
+    })
   })
 
   it('continues stored OpenAI Responses with all-turn reasoning context and a stable cache key', async () => {

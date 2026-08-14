@@ -15,8 +15,9 @@
  *
  * API keys stay outside that collection. The harness resolves a route's key
  * through its own seam and passes it as the request's highest-priority auth
- * override. OAuth routes instead share an explicitly configured persistent
- * pi-ai credential store, which owns login credentials and locked token refresh.
+ * override. Stored-login routes additionally share an explicitly configured
+ * persistent pi-ai credential store, which owns login credentials and locked
+ * OAuth token refresh.
  *
  * @module dsh-llm-pi-ai/adapter
  */
@@ -24,6 +25,7 @@
 import { createModels, getSupportedThinkingLevels } from '@earendil-works/pi-ai'
 import type {
   Api,
+  Credential,
   CredentialStore,
   Model,
   Models,
@@ -34,6 +36,7 @@ import type {
 } from '@earendil-works/pi-ai'
 import {
   attributionHeaders,
+  assertUsableApiKey,
   contentHasImage,
   LlmAdapter,
   LlmError,
@@ -51,6 +54,7 @@ import type {
 import type { AttachmentStore } from '@deepseek-ai/dsh-attachment'
 import { idleWatchdog, timeoutOf } from '@deepseek-ai/dsh-timeout'
 import type { ResolvedPiAiProviderProfile } from './config.ts'
+import { catalogProvider } from './catalog.ts'
 import { toPiContext } from './context.ts'
 import { previousOpenAIResponse } from './replay.ts'
 import { toStreamChunks } from './stream.ts'
@@ -61,9 +65,14 @@ interface PiAiSnapshot {
   profiles: ReadonlyMap<string, ResolvedPiAiProviderProfile>
   /** Providers for exactly those profiles; never mutated once published. */
   models: Models
-  /** Persistent OAuth credential owner used to build this collection. */
+  /** Persistent stored-login credential owner used to build this collection. */
   credentials?: CredentialStore
+  /** Standard OpenAI API collection used when the visible ChatGPT route stores an API key. */
+  openAIModels?: Models
 }
+
+const OPENAI_CHATGPT_ROUTE = 'openai-codex'
+const OPENAI_API_PROVIDER = 'openai'
 
 /** Constructor options for {@link PiAiAdapter}: the two resolution hooks the plugin owns. */
 export interface PiAiAdapterOptions {
@@ -184,6 +193,43 @@ function requestHeaders(headers: Readonly<Record<string, string>> | undefined): 
   }
 }
 
+/** Read the desktop route's stored API key without treating an OAuth credential as one. */
+async function storedOpenAIApiKey(credentials: CredentialStore | undefined): Promise<string | undefined> {
+  if (credentials === undefined) return undefined
+  let credential: Credential | undefined
+  try {
+    credential = await credentials.read(OPENAI_CHATGPT_ROUTE)
+  } catch (error) {
+    throw new LlmError('llm-pi-ai: OpenAI credential store read failed', 'AUTH', { cause: error })
+  }
+  if (credential?.type !== 'api_key') return undefined
+  if (credential.key === undefined) {
+    throw new LlmError('llm-pi-ai: the stored OpenAI API-key credential has no key', 'MISSING_CREDENTIAL')
+  }
+  return assertUsableApiKey(credential.key, 'llm-pi-ai', 'the OpenAI login dialog')
+}
+
+/** Rebind one logical ChatGPT-route model to the standard OpenAI Responses provider. */
+function openAIApiModel(
+  snapshot: PiAiSnapshot,
+  routeModel: Model<Api>,
+  profile: ResolvedPiAiProviderProfile,
+): Model<Api> {
+  const apiModel = snapshot.openAIModels?.getModel(OPENAI_API_PROVIDER, routeModel.id)
+  if (apiModel === undefined) {
+    throw new LlmError(`OpenAI API has no configured model "${routeModel.id}"`, 'UNKNOWN_MODEL')
+  }
+  const { baseUrl: _routeBaseUrl, compat: _routeCompat, ...logicalModel } = routeModel
+  const baseUrl = profile.baseURL ?? apiModel.baseUrl
+  return {
+    ...logicalModel,
+    provider: apiModel.provider,
+    api: apiModel.api,
+    baseUrl,
+    ...apiModel.compat === undefined ? {} : { compat: apiModel.compat },
+  }
+}
+
 /** Add explicitly enabled first-party Responses fields after pi-ai assembles the body. */
 function openAIResponsesPayload(
   payload: unknown,
@@ -228,7 +274,20 @@ export class PiAiAdapter extends LlmAdapter {
     if (this.snapshot?.profiles === profiles && this.snapshot.credentials === credentials) return this.snapshot
     const models: MutableModels = createModels(credentials === undefined ? {} : { credentials })
     for (const profile of profiles.values()) models.setProvider(profile.piProvider)
-    this.snapshot = { profiles, models, ...credentials === undefined ? {} : { credentials } }
+    let openAIModels: Models | undefined
+    if (profiles.has(OPENAI_CHATGPT_ROUTE)) {
+      const provider = catalogProvider(OPENAI_API_PROVIDER)
+      if (provider === undefined) throw new LlmError('pi-ai catalog has no OpenAI API provider', 'NO_ADAPTER')
+      const collection = createModels()
+      collection.setProvider(provider)
+      openAIModels = collection
+    }
+    this.snapshot = {
+      profiles,
+      models,
+      ...credentials === undefined ? {} : { credentials },
+      ...openAIModels === undefined ? {} : { openAIModels },
+    }
     return this.snapshot
   }
 
@@ -311,12 +370,22 @@ export class PiAiAdapter extends LlmAdapter {
     // the one it started with and the next call picks up the new one.
     const snapshot = this.current()
     const profile = this.profileOf(snapshot, options.provider)
-    const model = this.modelOf(snapshot, options.provider, options.model)
+    const routeModel = this.modelOf(snapshot, options.provider, options.model)
+    const configuredApiKey = await this.config.resolveApiKey(options.provider, profile)
+    const storedApiKey = configuredApiKey === undefined && options.provider === OPENAI_CHATGPT_ROUTE
+      ? await storedOpenAIApiKey(snapshot.credentials)
+      : undefined
+    const apiKey = configuredApiKey ?? storedApiKey
+    const usesOpenAIApi = options.provider === OPENAI_CHATGPT_ROUTE
+      && profile.api === undefined
+      && apiKey !== undefined
+    const model = usesOpenAIApi ? openAIApiModel(snapshot, routeModel, profile) : routeModel
+    const requestModels = usesOpenAIApi ? snapshot.openAIModels : snapshot.models
+    if (requestModels === undefined) throw new LlmError('OpenAI API provider is unavailable', 'NO_ADAPTER')
     const reasoning = resolveReasoningLevel(
       model,
       options.reasoningEffort ?? profile.reasoning,
     )
-    const apiKey = await this.config.resolveApiKey(options.provider, profile)
 
     const consumer = new AbortController()
     const upstream = options.signal === undefined
@@ -344,7 +413,7 @@ export class PiAiAdapter extends LlmAdapter {
       const context = attachments === undefined
         ? toPiContext(contextOptions)
         : await toPiContext(contextOptions, attachments)
-      const events = snapshot.models.streamSimple(model, context, {
+      const events = requestModels.streamSimple(model, context, {
         ...profileOptions(profile, reasoning, apiKey),
         ...options.temperature === undefined ? {} : { temperature: options.temperature },
         ...options.maxTokens === undefined ? {} : { maxTokens: options.maxTokens },
@@ -357,7 +426,10 @@ export class PiAiAdapter extends LlmAdapter {
         // Harness-owned and therefore win collisions.
         headers: requestHeaders(profile.headers),
       })
-      const iterator = toStreamChunks(events, model.contextWindow)[Symbol.asyncIterator]()
+      const iterator = toStreamChunks(events, model.contextWindow, {
+        provider: options.provider,
+        model: options.model,
+      })[Symbol.asyncIterator]()
       let exhausted = false
       try {
         while (true) {

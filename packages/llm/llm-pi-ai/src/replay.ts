@@ -30,6 +30,14 @@ export interface PiAiReplayState {
   blocks: PiAiReplayBlock[]
 }
 
+/** Logical Harness route identity when dispatch uses another pi-ai provider internally. */
+export interface PiAiReplayIdentity {
+  /** Provider route selected in Harness. */
+  provider: string
+  /** Model id selected in Harness. */
+  model: string
+}
+
 /** Parse tool-call argument JSON; tolerate model malformations with {}. */
 function parseArguments(raw: string): Record<string, unknown> {
   try {
@@ -58,15 +66,16 @@ function emptyPiUsage(): PiUsage {
 /**
  * Project a successful pi-ai response into the minimal durable replay state.
  * @param message - completed native pi-ai assistant response.
+ * @param identity - optional logical route identity replacing an internal dispatch provider.
  * @returns the versioned lossless-JSON replay projection.
  */
-export function toPiReplayState(message: AssistantMessage): PiAiReplayState {
+export function toPiReplayState(message: AssistantMessage, identity?: PiAiReplayIdentity): PiAiReplayState {
   return {
     kind: 'pi-ai',
     version: 1,
     api: message.api,
-    provider: message.provider,
-    model: message.model,
+    provider: identity?.provider ?? message.provider,
+    model: identity?.model ?? message.model,
     ...message.responseModel === undefined ? {} : { responseModel: message.responseModel },
     ...message.responseId === undefined ? {} : { responseId: message.responseId },
     stopReason: message.stopReason,

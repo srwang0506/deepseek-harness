@@ -1,7 +1,9 @@
 # Desktop distribution keeps the official DeepSeek route and default model.
 # OpenAI GPT models are an optional pi-ai provider route authenticated through
-# an owner-only OAuth credential document under DSH_HOME. This is not a Codex
-# CLI or subagent integration; `openai-codex` is pi-ai's provider route id.
+# an owner-only credential document under DSH_HOME. ChatGPT OAuth uses pi-ai's
+# `openai-codex` transport; an API key keeps the visible route but dispatches
+# through the standard OpenAI Responses API. This is not a Codex CLI or
+# subagent integration; `openai-codex` is pi-ai's logical provider route id.
 
 # Finder-launched processes keep their physical cwd on APFS. DSH_CWD remains
 # the single logical workspace for session metadata, filesystem resolution,
@@ -24,7 +26,11 @@
     credentialStorePath: !!js (process.env.DSH_HOME ?? process.cwd()) + '/pi-ai-auth.json'
     providers:
       openai-codex:
-        displayName: OpenAI (ChatGPT OAuth)
+        displayName: OpenAI GPT
         reasoning: high
         cacheRetention: long
         transport: auto
+        openAIResponses:
+          store: true
+          previousResponseId: true
+          reasoningContext: all_turns

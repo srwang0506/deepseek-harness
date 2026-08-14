@@ -13,6 +13,7 @@ import type { FinishReason, StreamChunk, TokenUsage } from '@deepseek-ai/dsh-llm
 import { isContextOverflow } from '@earendil-works/pi-ai'
 import type { AssistantMessage, AssistantMessageEvent, Usage as PiUsage } from '@earendil-works/pi-ai'
 import { toPiReplayState } from './replay.ts'
+import type { PiAiReplayIdentity } from './replay.ts'
 
 /**
  * Map pi-ai usage (reasoning folded into output by pi-ai).
@@ -118,12 +119,14 @@ export function mapStopReason(message: AssistantMessage, contextWindow?: number)
  * `finish` chunks (the harness protocol's other error-delivery style).
  * @param events - one assistant turn's pi-ai event stream.
  * @param contextWindow - resolved catalog capacity for usage-based overflow detection.
+ * @param replayIdentity - logical route identity when dispatch uses an internal provider alias.
  * @returns the harness chunks, ending with `usage` then `finish`; throws
  *   `LlmError` (`STREAM_CLOSED`) if the source ends without a terminal event.
  */
 export async function* toStreamChunks(
   events: AsyncIterable<AssistantMessageEvent>,
   contextWindow?: number,
+  replayIdentity?: PiAiReplayIdentity,
 ): AsyncGenerator<StreamChunk> {
   // pi-ai contentIndex ↔ our block index map 1:1 (both count blocks from 0
   // in stream order), but we track ids per index for tool calls.
@@ -190,7 +193,7 @@ export async function* toStreamChunks(
         yield {
           type: 'finish',
           reason: mapStopReason(event.message, contextWindow),
-          replayState: toPiReplayState(event.message),
+          replayState: toPiReplayState(event.message, replayIdentity),
         }
         return
       case 'error':

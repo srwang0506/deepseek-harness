@@ -184,7 +184,7 @@ export interface ResolvedPiAiProviderProfile
 
 /** Plugin configuration: the provider routes this instance owns. */
 export interface Config {
-  /** Absolute path of the owner-only pi-ai OAuth credential document. */
+  /** Absolute path of the owner-only pi-ai stored-login credential document. */
   credentialStorePath?: string
   /**
    * pi-ai provider routes, keyed by provider. An empty (or omitted) dict is

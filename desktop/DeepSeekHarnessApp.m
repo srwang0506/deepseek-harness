@@ -3,7 +3,7 @@
 
 static NSString *const DSHAppName = @"deepseek harness";
 
-@interface DSHApplicationDelegate : NSObject <NSApplicationDelegate, WKNavigationDelegate>
+@interface DSHApplicationDelegate : NSObject <NSApplicationDelegate, WKNavigationDelegate, WKScriptMessageHandler>
 @property(nonatomic, strong) NSWindow *window;
 @property(nonatomic, strong) WKWebView *webView;
 @property(nonatomic, strong) NSTask *backendTask;
@@ -62,6 +62,10 @@ static NSString *const DSHAppName = @"deepseek harness";
 
 - (NSURL *)openAIOAuthEntrypoint {
   return [[self runtimeRoot] URLByAppendingPathComponent:@"openai-oauth.mjs"];
+}
+
+- (NSURL *)openAIAuthBridge {
+  return [[self resources] URLByAppendingPathComponent:@"openai-auth-bridge.js"];
 }
 
 - (NSURL *)applicationSupportDirectory:(NSError **)error {
@@ -128,6 +132,19 @@ static NSString *const DSHAppName = @"deepseek harness";
 - (void)buildWindow {
   WKWebViewConfiguration *configuration = [WKWebViewConfiguration new];
   configuration.websiteDataStore = WKWebsiteDataStore.defaultDataStore;
+  NSError *bridgeError = nil;
+  NSString *bridge = [NSString stringWithContentsOfURL:[self openAIAuthBridge]
+                                              encoding:NSUTF8StringEncoding
+                                                 error:&bridgeError];
+  if (!bridge) {
+    [self showFailure:[NSString stringWithFormat:@"无法加载 OpenAI 登录界面：%@", bridgeError.localizedDescription]];
+    return;
+  }
+  [configuration.userContentController addScriptMessageHandler:self name:@"openAIAuth"];
+  [configuration.userContentController addUserScript:[[WKUserScript alloc]
+    initWithSource:bridge
+     injectionTime:WKUserScriptInjectionTimeAtDocumentStart
+  forMainFrameOnly:YES]];
   WKWebView *view = [[WKWebView alloc] initWithFrame:NSZeroRect configuration:configuration];
   view.navigationDelegate = self;
   [view setValue:@NO forKey:@"drawsBackground"];
@@ -165,9 +182,9 @@ static NSString *const DSHAppName = @"deepseek harness";
                                               action:@selector(orderFrontStandardAboutPanel:)
                                        keyEquivalent:@""]];
   [appMenu addItem:NSMenuItem.separatorItem];
-  [appMenu addItem:[self menuItem:@"OpenAI OAuth 登录…" action:@selector(signInOpenAI:) key:@"l"]];
-  [appMenu addItem:[self menuItem:@"OpenAI OAuth 状态" action:@selector(openAIStatus:) key:@""]];
-  [appMenu addItem:[self menuItem:@"退出 OpenAI OAuth" action:@selector(signOutOpenAI:) key:@""]];
+  [appMenu addItem:[self menuItem:@"OpenAI 登录或切换方式…" action:@selector(signInOpenAI:) key:@"l"]];
+  [appMenu addItem:[self menuItem:@"OpenAI 登录状态" action:@selector(openAIStatus:) key:@""]];
+  [appMenu addItem:[self menuItem:@"退出 OpenAI" action:@selector(signOutOpenAI:) key:@""]];
   [appMenu addItem:NSMenuItem.separatorItem];
   [appMenu addItem:[self menuItem:@"显示后端日志" action:@selector(showLogs:) key:@""]];
   [appMenu addItem:NSMenuItem.separatorItem];
@@ -285,20 +302,142 @@ static NSString *const DSHAppName = @"deepseek harness";
 }
 
 - (void)signInOpenAI:(id)sender {
-  [self runOpenAIOAuthCommand:@"login" title:@"OpenAI OAuth 登录"];
+  [self.webView evaluateJavaScript:@"window.deepseekHarnessOpenAI?.showLogin()" completionHandler:nil];
 }
 
 - (void)openAIStatus:(id)sender {
-  [self runOpenAIOAuthCommand:@"status" title:@"OpenAI OAuth 状态"];
+  [self runOpenAIOAuthCommand:@"status" title:@"OpenAI 登录状态"];
 }
 
 - (void)signOutOpenAI:(id)sender {
-  [self runOpenAIOAuthCommand:@"logout" title:@"退出 OpenAI OAuth"];
+  [self runOpenAIOAuthCommand:@"logout" title:@"退出 OpenAI"];
+}
+
+- (void)userContentController:(WKUserContentController *)userContentController
+      didReceiveScriptMessage:(WKScriptMessage *)message {
+  if (![message.name isEqualToString:@"openAIAuth"] || message.webView != self.webView
+      || ![message.body isKindOfClass:NSDictionary.class]) return;
+  NSURL *pageURL = message.webView.URL;
+  if (!self.backendURL || ![pageURL.host isEqualToString:self.backendURL.host]
+      || ![pageURL.port isEqualToNumber:self.backendURL.port]) return;
+  NSDictionary *body = message.body;
+  NSString *requestId = [body[@"requestId"] isKindOfClass:NSString.class] ? body[@"requestId"] : nil;
+  NSString *command = [body[@"command"] isKindOfClass:NSString.class] ? body[@"command"] : nil;
+  if (!requestId || !command) return;
+  if (self.accountTask) {
+    [self replyOpenAIRequest:requestId success:NO value:@{ @"message": @"已有 OpenAI 登录操作正在进行。" }];
+    return;
+  }
+
+  NSArray<NSString *> *arguments = nil;
+  NSString *secret = nil;
+  if ([command isEqualToString:@"status"]) {
+    arguments = @[ @"status-json" ];
+  } else if ([command isEqualToString:@"login"]) {
+    NSString *method = [body[@"method"] isKindOfClass:NSString.class] ? body[@"method"] : nil;
+    NSSet<NSString *> *methods = [NSSet setWithArray:@[ @"browser", @"device", @"api-key" ]];
+    if (!method || ![methods containsObject:method]) {
+      [self replyOpenAIRequest:requestId success:NO value:@{ @"message": @"未知的 OpenAI 登录方式。" }];
+      return;
+    }
+    if ([method isEqualToString:@"api-key"]) {
+      secret = [body[@"apiKey"] isKindOfClass:NSString.class] ? body[@"apiKey"] : nil;
+      if (!secret.length) {
+        [self replyOpenAIRequest:requestId success:NO value:@{ @"message": @"OpenAI API Key 不能为空。" }];
+        return;
+      }
+    }
+    arguments = @[ @"login", method ];
+  } else {
+    [self replyOpenAIRequest:requestId success:NO value:@{ @"message": @"不支持的 OpenAI 登录操作。" }];
+    return;
+  }
+  [self runOpenAIBridgeArguments:arguments requestId:requestId secret:secret];
+}
+
+- (void)runOpenAIBridgeArguments:(NSArray<NSString *> *)arguments
+                       requestId:(NSString *)requestId
+                          secret:(NSString *)secret {
+  NSError *error = nil;
+  NSURL *dshHome = [self applicationSupportDirectory:&error];
+  if (!dshHome) {
+    [self replyOpenAIRequest:requestId success:NO value:@{ @"message": error.localizedDescription ?: @"无法准备凭据目录。" }];
+    return;
+  }
+  NSTask *task = [NSTask new];
+  task.executableURL = [self bundledNode];
+  NSMutableArray<NSString *> *taskArguments = [NSMutableArray arrayWithObjects:
+    [self openAIOAuthEntrypoint].path, arguments.firstObject, [self openAICredentialFile:dshHome].path, nil];
+  if (arguments.count > 1) [taskArguments addObject:arguments[1]];
+  task.arguments = taskArguments;
+  task.currentDirectoryURL = NSFileManager.defaultManager.homeDirectoryForCurrentUser;
+  task.environment = [self processEnvironment:dshHome];
+  NSPipe *output = [NSPipe pipe];
+  task.standardOutput = output;
+  task.standardError = output;
+  NSPipe *input = nil;
+  if (secret) {
+    input = [NSPipe pipe];
+    task.standardInput = input;
+  } else {
+    task.standardInput = [NSFileHandle fileHandleWithNullDevice];
+  }
+  __weak typeof(self) weakSelf = self;
+  BOOL wantsStatus = [arguments.firstObject isEqualToString:@"status-json"];
+  task.terminationHandler = ^(NSTask *finished) {
+    NSData *data = [output.fileHandleForReading readDataToEndOfFile];
+    NSString *message = [[[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding]
+      stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
+    dispatch_async(dispatch_get_main_queue(), ^{
+      typeof(self) self = weakSelf;
+      if (!self) return;
+      self.accountTask = nil;
+      if (finished.terminationStatus != 0) {
+        [self replyOpenAIRequest:requestId success:NO value:@{
+          @"message": message.length ? message : @"OpenAI 登录操作失败。"
+        }];
+        return;
+      }
+      if (!wantsStatus) {
+        [self replyOpenAIRequest:requestId success:YES value:@{ @"message": message ?: @"" }];
+        return;
+      }
+      NSData *jsonData = [message dataUsingEncoding:NSUTF8StringEncoding];
+      NSDictionary *status = jsonData ? [NSJSONSerialization JSONObjectWithData:jsonData options:0 error:nil] : nil;
+      if (![status isKindOfClass:NSDictionary.class]) {
+        [self replyOpenAIRequest:requestId success:NO value:@{ @"message": @"无法读取 OpenAI 登录状态。" }];
+        return;
+      }
+      [self replyOpenAIRequest:requestId success:YES value:status];
+    });
+  };
+  self.accountTask = task;
+  if (![task launchAndReturnError:&error]) {
+    self.accountTask = nil;
+    [self replyOpenAIRequest:requestId success:NO value:@{ @"message": error.localizedDescription ?: @"无法启动 OpenAI 登录。" }];
+    return;
+  }
+  if (secret) {
+    [input.fileHandleForWriting writeData:[secret dataUsingEncoding:NSUTF8StringEncoding]];
+    [input.fileHandleForWriting closeFile];
+  }
+}
+
+- (void)replyOpenAIRequest:(NSString *)requestId success:(BOOL)success value:(NSDictionary *)value {
+  NSData *requestData = [NSJSONSerialization dataWithJSONObject:requestId options:0 error:nil];
+  NSData *valueData = [NSJSONSerialization dataWithJSONObject:value ?: @{} options:0 error:nil];
+  if (!requestData || !valueData) return;
+  NSString *requestJSON = [[NSString alloc] initWithData:requestData encoding:NSUTF8StringEncoding];
+  NSString *valueJSON = [[NSString alloc] initWithData:valueData encoding:NSUTF8StringEncoding];
+  NSString *script = [NSString stringWithFormat:
+    @"window.__deepseekHarnessOpenAIAuthReply?.(%@,%@,%@)",
+    requestJSON, success ? @"true" : @"false", valueJSON];
+  [self.webView evaluateJavaScript:script completionHandler:nil];
 }
 
 - (void)runOpenAIOAuthCommand:(NSString *)command title:(NSString *)title {
   if (self.accountTask) {
-    [self showFailure:@"已有 OpenAI OAuth 操作正在进行。"];
+    [self showFailure:@"已有 OpenAI 登录操作正在进行。"];
     return;
   }
   NSError *error = nil;
@@ -335,7 +474,7 @@ static NSString *const DSHAppName = @"deepseek harness";
   self.accountTask = task;
   if (![task launchAndReturnError:&error]) {
     self.accountTask = nil;
-    [self showFailure:[NSString stringWithFormat:@"无法启动 OpenAI OAuth：%@", error.localizedDescription]];
+    [self showFailure:[NSString stringWithFormat:@"无法启动 OpenAI 登录操作：%@", error.localizedDescription]];
   }
 }
 
@@ -361,7 +500,7 @@ static NSString *const DSHAppName = @"deepseek harness";
     "font:15px -apple-system,BlinkMacSystemFont,sans-serif}main{height:100%;display:grid;"
     "place-items:center;text-align:center}.fish{font-size:54px;color:#4d6bfe;margin-bottom:18px}"
     ".sub{color:#7d879e;margin-top:9px}</style><main><div><div class='fish'>◖°⌁°◗</div>"
-    "<div>正在启动 deepseek harness…</div><div class='sub'>默认 DeepSeek · 可选 OpenAI OAuth</div>"
+    "<div>正在启动 deepseek harness…</div><div class='sub'>默认 DeepSeek · 可选 OpenAI GPT</div>"
     "</div></main></html>";
 }
 

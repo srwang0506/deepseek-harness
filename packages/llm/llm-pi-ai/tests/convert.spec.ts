@@ -378,6 +378,23 @@ describe('toPiContext', () => {
     })
   })
 
+  it('records the logical route when a request dispatches through an internal provider', () => {
+    const state = toPiReplayState(assistant({
+      api: 'openai-responses',
+      provider: 'openai',
+      model: 'gpt-5.6-sol',
+    }), {
+      provider: 'openai-codex',
+      model: 'gpt-5.6-sol',
+    })
+
+    expect(state).toMatchObject({
+      api: 'openai-responses',
+      provider: 'openai-codex',
+      model: 'gpt-5.6-sol',
+    })
+  })
+
   it('replays all native block kinds when optional metadata is absent', () => {
     const state = toPiReplayState(assistant({
       content: [
