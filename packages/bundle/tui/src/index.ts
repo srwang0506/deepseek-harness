@@ -12,6 +12,7 @@
 import { randomUUID } from 'node:crypto'
 import { existsSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { spawn } from 'node:child_process'
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { installModelSelection } from '@deepseek-ai/dsh-agent'
@@ -208,10 +209,12 @@ function helpText(): string {
     '  /doctor           check environment and credentials',
     '  /export [file]    export the session log as JSONL',
     '  /diff             show this session\'s file changes',
+    '  /review           review this session\'s file changes for bugs',
     '  /undo             revert the most recent file change',
     '  /help             show this help',
     '  /quit             exit',
     'Keys: Shift+Tab cycles the permission preset; Ctrl+P toggles plan mode; Ctrl+C cancels the turn.',
+    'A !-prefixed line runs a local shell command, e.g. !git status.',
     'Custom commands: $DSH_HOME/commands/<name>.md (prompt template with $ARGUMENTS).',
   ].join('\n')
 }
@@ -423,7 +426,7 @@ function registerCustomCommands(ctx: Context): void {
 
 /** The built-in slash-command names plus every registry command. */
 function slashNames(ctx: Context, agent: Agent): string[] {
-  const names = new Set(['new', 'resume', 'model', 'login', 'logout', 'sessions', 'status', 'compact', 'init', 'doctor', 'export', 'diff', 'undo', 'help', 'quit'])
+  const names = new Set(['new', 'resume', 'model', 'login', 'logout', 'sessions', 'status', 'compact', 'init', 'doctor', 'export', 'diff', 'review', 'undo', 'help', 'quit'])
   const commands = ctx.get('commands')
   if (commands !== undefined) {
     for (const descriptor of commands.list(agent)) names.add(descriptor.name)
@@ -439,6 +442,35 @@ function suggestionsFor(ctx: Context, agent: Agent, line: string, cursor: number
     return slashNames(ctx, agent).filter(name => name.startsWith(word)).map(name => '/' + name)
   }
   return suggestMentions(line, cursor, process.cwd())
+}
+
+/**
+ * Run one `!`-prefixed line as a local shell command and record its output.
+ * @param command - the command text after `!`.
+ * @param store - the UI store the output rows land in.
+ */
+async function runLocalCommand(command: string, store: UiStore): Promise<void> {
+  if (command === '') {
+    store.push({ kind: 'info', text: '! needs a command, e.g. !git status' })
+    return
+  }
+  store.push({ kind: 'info', text: `$ ${command}` })
+  await new Promise<void>((resolvePromise) => {
+    const child = spawn(command, { cwd: process.cwd(), shell: true, stdio: ['ignore', 'pipe', 'pipe'] })
+    let output = ''
+    child.stdout.on('data', (chunk: Buffer) => { output += chunk.toString('utf8') })
+    child.stderr.on('data', (chunk: Buffer) => { output += chunk.toString('utf8') })
+    child.once('error', (error) => {
+      store.push({ kind: 'error', text: error.message })
+      resolvePromise()
+    })
+    child.once('close', (code) => {
+      const text = output.trimEnd()
+      if (text !== '') store.push({ kind: 'info', text })
+      store.push({ kind: 'info', text: `exit ${code ?? 'unknown'}` })
+      resolvePromise()
+    })
+  })
 }
 
 /** Interactive mode: mount the full-screen Ink app and drive the agent. */
@@ -531,6 +563,10 @@ async function runInteractive(ctx: Context, config: Config, exit: (code: number)
   const handleLine = async (line: string): Promise<void> => {
     const agent = current.agent
     if (agent === undefined) return
+    if (line.startsWith('!')) {
+      await runLocalCommand(line.slice(1).trim(), store)
+      return
+    }
     const slash = parseSlash(line)
     if (slash !== undefined) {
       switch (slash.name) {
@@ -646,6 +682,26 @@ async function runInteractive(ctx: Context, config: Config, exit: (code: number)
           } else {
             store.push({ kind: 'diff', text: plainFileDiffs(diffs) })
           }
+          return
+        }
+        case 'review': {
+          const diffs = collectDiffs(agent.session)
+          if (diffs.length === 0) {
+            store.push({ kind: 'info', text: 'no file changes in this session to review' })
+            return
+          }
+          const prompt = 'Review the following changes from this session for bugs, style issues, and missing tests:\n\n'
+            + diffs.map(diff => `## ${diff.path}\n${diff.newText}`).join('\n\n')
+          store.push({ kind: 'user', text: '/review' })
+          store.setRunning(true)
+          agent.followup(createUserMessage({
+            content: [{ type: 'text', text: prompt }],
+            source: { kind: 'user' },
+          }))
+          await agent.whenIdle()
+          await sessions.flush(agent.session)
+          store.setRunning(false)
+          refreshStatus()
           return
         }
         case 'undo': {
