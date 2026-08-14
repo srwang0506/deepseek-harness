@@ -37,7 +37,10 @@ export const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
  */
 export async function run(command: string, args: readonly string[], cwd = repoRoot): Promise<void> {
   await new Promise<void>((resolvePromise, reject) => {
-    const child = spawn(command, [...args], { cwd, stdio: 'inherit', env: process.env })
+    // Windows `.cmd`/`.bat` shims (e.g. `pnpm.cmd`) are not executable without
+    // a shell, so those must run through cmd.exe rather than CreateProcess.
+    const shell = process.platform === 'win32' && /\.(cmd|bat)$/i.test(command)
+    const child = spawn(command, [...args], { cwd, stdio: 'inherit', env: process.env, shell })
     child.once('error', reject)
     child.once('exit', (code, signal) => {
       if (code === 0) resolvePromise()
