@@ -58,7 +58,7 @@ async function loginOAuth(method) {
     notify: (event) => {
       if (event.type === 'auth_url') {
         openBrowser(event.url)
-        process.stdout.write('已在浏览器中打开 OpenAI 登录页。完成授权后请返回此 App。\n')
+        process.stdout.write('已在浏览器中打开 OpenAI 登录页。完成授权后请返回 DeeepSeek Harness。\n')
       } else if (event.type === 'device_code') {
         copyToClipboard(event.userCode)
         openBrowser(event.verificationUri)
@@ -72,7 +72,7 @@ async function loginOAuth(method) {
 }
 
 async function loginApiKey() {
-  const key = assertUsableApiKey(await readSecret(), 'deepseek harness', 'OpenAI API Key 输入框')
+  const key = assertUsableApiKey(await readSecret(), 'DeeepSeek Harness', 'OpenAI API Key 输入框')
   await credentials.modify(providerId, async () => ({ type: 'api_key', key }))
   process.stdout.write('OpenAI API Key 已保存。GPT 请求将使用标准 OpenAI Responses API。\n')
 }

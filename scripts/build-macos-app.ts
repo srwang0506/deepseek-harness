@@ -14,6 +14,7 @@ interface SharpPipeline {
 
 type SharpFactory = (input: Buffer) => SharpPipeline
 
+const PRODUCT_NAME = 'DeeepSeek Harness'
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const defaultOutput = resolve(repoRoot, '../../outputs')
 
@@ -146,17 +147,45 @@ async function findSymlink(directory: string): Promise<string | undefined> {
   return undefined
 }
 
+/** Remove Finder AppleDouble entries before signing or archiving a distribution. */
+async function removeAppleDouble(directory: string): Promise<void> {
+  for (const entry of await readdir(directory, { withFileTypes: true })) {
+    const path = join(directory, entry.name)
+    if (entry.name.startsWith('._')) {
+      await rm(path, { recursive: true, force: true })
+    } else if (entry.isDirectory()) {
+      await removeAppleDouble(path)
+    }
+  }
+}
+
+function cliWrapper(): string {
+  return `#!/bin/sh
+set -eu
+script_path=$0
+while [ -L "$script_path" ]; do
+  link_target=$(readlink "$script_path")
+  case "$link_target" in
+    /*) script_path=$link_target ;;
+    *) script_path=$(dirname -- "$script_path")/$link_target ;;
+  esac
+done
+bin_dir=$(CDPATH= cd -- "$(dirname -- "$script_path")" && pwd)
+exec "$bin_dir/../runtime/node" "$bin_dir/../runtime/dsh/deeepseek-cli.mjs" "$@"
+`
+}
+
 function infoPlist(version: string): string {
   return `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
   <key>CFBundleDevelopmentRegion</key><string>zh_CN</string>
-  <key>CFBundleDisplayName</key><string>deepseek harness</string>
+  <key>CFBundleDisplayName</key><string>${PRODUCT_NAME}</string>
   <key>CFBundleExecutable</key><string>deepseek-harness</string>
   <key>CFBundleIconFile</key><string>AppIcon</string>
   <key>CFBundleIdentifier</key><string>ai.deepseek.harness.desktop</string>
   <key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
-  <key>CFBundleName</key><string>deepseek harness</string>
+  <key>CFBundleName</key><string>${PRODUCT_NAME}</string>
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleShortVersionString</key><string>${version}</string>
   <key>CFBundleVersion</key><string>${version}</string>
@@ -171,12 +200,22 @@ function infoPlist(version: string): string {
 async function main(): Promise<void> {
   if (process.platform !== 'darwin') throw new Error('the desktop builder requires macOS')
   const outputRoot = outputArgument(process.argv.slice(2))
-  const appRoot = join(outputRoot, 'deepseek harness.app')
-  const zipPath = join(outputRoot, 'deepseek-harness-macos-arm64.zip')
+  const appRoot = join(outputRoot, `${PRODUCT_NAME}.app`)
+  const appZipPath = join(outputRoot, 'deeepseek-harness-macos-arm64.zip')
+  const cliRoot = join(outputRoot, `${PRODUCT_NAME} CLI`)
+  const cliZipPath = join(outputRoot, 'deeepseek-harness-cli-macos-arm64.zip')
   const stageRoot = join(outputRoot, '.desktop-build')
-  for (const target of [appRoot, zipPath, stageRoot]) assertSafeOutput(outputRoot, target)
+  const legacyTargets = [
+    join(outputRoot, 'deepseek harness.app'),
+    join(outputRoot, 'deepseek-harness-macos-arm64.zip'),
+  ]
+  for (const target of [appRoot, appZipPath, cliRoot, cliZipPath, stageRoot, ...legacyTargets]) {
+    assertSafeOutput(outputRoot, target)
+  }
   await mkdir(outputRoot, { recursive: true })
-  await Promise.all([appRoot, zipPath, stageRoot].map(target => rm(target, { recursive: true, force: true })))
+  await Promise.all([
+    appRoot, appZipPath, cliRoot, cliZipPath, stageRoot, ...legacyTargets,
+  ].map(target => rm(target, { recursive: true, force: true })))
 
   await run('pnpm', ['run', 'build'])
 
@@ -211,6 +250,11 @@ async function main(): Promise<void> {
   )
   await copyFile(join(repoRoot, 'desktop/openai-auth-bridge.js'), join(resources, 'openai-auth-bridge.js'))
   await copyFile(join(repoRoot, 'desktop/openai-oauth.mjs'), join(deployedDsh, 'openai-oauth.mjs'))
+  await copyFile(join(repoRoot, 'apps/desktop-runtime/cli-entry.mjs'), join(deployedDsh, 'deeepseek-cli.mjs'))
+  await copyFile(
+    join(repoRoot, 'desktop/cli.cordis.patch.yml'),
+    join(resources, 'config/cli.cordis.patch.yml'),
+  )
 
   const executable = join(macOS, 'deepseek-harness')
   await run('xcrun', [
@@ -224,14 +268,38 @@ async function main(): Promise<void> {
   const rootPackage = JSON.parse(await readFile(join(repoRoot, 'package.json'), 'utf8')) as { version: string }
   await writeFile(join(contents, 'Info.plist'), infoPlist(rootPackage.version))
   await buildIcon(join(stageRoot, 'AppIcon.iconset'), join(resources, 'AppIcon.icns'))
+  await removeAppleDouble(appRoot)
   await run('codesign', ['--force', '--deep', '--sign', '-', appRoot])
+  await run('codesign', ['--verify', '--deep', '--strict', '--verbose=2', appRoot])
   await run('ditto', [
-    '-c', '-k', '--norsrc', '--noextattr', '--noqtn', '--noacl', '--keepParent', appRoot, zipPath,
+    '-c', '-k', '--norsrc', '--noextattr', '--noqtn', '--noacl', '--keepParent', appRoot, appZipPath,
+  ])
+
+  await mkdir(cliRoot, { recursive: true })
+  await Promise.all([
+    mkdir(join(cliRoot, 'bin'), { recursive: true }),
+    mkdir(join(cliRoot, 'config'), { recursive: true }),
+  ])
+  await cp(runtime, join(cliRoot, 'runtime'), { recursive: true, dereference: true })
+  await Promise.all([
+    copyFile(join(resources, 'config/desktop.cordis.patch.yml'), join(cliRoot, 'config/desktop.cordis.patch.yml')),
+    copyFile(join(resources, 'config/cli.cordis.patch.yml'), join(cliRoot, 'config/cli.cordis.patch.yml')),
+    copyFile(join(repoRoot, 'desktop/README.md'), join(cliRoot, 'README.md')),
+    copyFile(join(repoRoot, 'desktop/README.zh.md'), join(cliRoot, 'README.zh.md')),
+    writeFile(join(cliRoot, 'bin/deeepseek-harness'), cliWrapper(), { mode: 0o755 }),
+  ])
+  await chmod(join(cliRoot, 'runtime/node'), 0o755)
+  await chmod(join(cliRoot, 'bin/deeepseek-harness'), 0o755)
+  await removeAppleDouble(cliRoot)
+  await run('ditto', [
+    '-c', '-k', '--norsrc', '--noextattr', '--noqtn', '--noacl', '--keepParent', cliRoot, cliZipPath,
   ])
   await rm(stageRoot, { recursive: true, force: true })
 
   console.log(`Built ${appRoot}`)
-  console.log(`Archive ${zipPath}`)
+  console.log(`Archive ${appZipPath}`)
+  console.log(`Built ${cliRoot}`)
+  console.log(`Archive ${cliZipPath}`)
 }
 
 await main()

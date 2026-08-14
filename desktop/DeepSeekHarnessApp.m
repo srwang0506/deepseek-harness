@@ -1,7 +1,7 @@
 #import <Cocoa/Cocoa.h>
 #import <WebKit/WebKit.h>
 
-static NSString *const DSHAppName = @"deepseek harness";
+static NSString *const DSHAppName = @"DeeepSeek Harness";
 
 @interface DSHApplicationDelegate : NSObject <NSApplicationDelegate, WKNavigationDelegate, WKScriptMessageHandler>
 @property(nonatomic, strong) NSWindow *window;
@@ -153,12 +153,13 @@ static NSString *const DSHAppName = @"deepseek harness";
   NSWindow *window = [[NSWindow alloc]
     initWithContentRect:NSMakeRect(0, 0, 1240, 820)
               styleMask:NSWindowStyleMaskTitled | NSWindowStyleMaskClosable |
-                        NSWindowStyleMaskMiniaturizable | NSWindowStyleMaskResizable |
-                        NSWindowStyleMaskFullSizeContentView
+                        NSWindowStyleMaskMiniaturizable | NSWindowStyleMaskResizable
                 backing:NSBackingStoreBuffered
                   defer:NO];
   window.title = DSHAppName;
-  window.titlebarAppearsTransparent = YES;
+  window.titleVisibility = NSWindowTitleVisible;
+  window.titlebarAppearsTransparent = NO;
+  window.movableByWindowBackground = YES;
   window.minSize = NSMakeSize(880, 600);
   [window center];
   window.contentView = view;
@@ -502,7 +503,7 @@ static NSString *const DSHAppName = @"deepseek harness";
     "font:15px -apple-system,BlinkMacSystemFont,sans-serif}main{height:100%;display:grid;"
     "place-items:center;text-align:center}.fish{font-size:54px;color:#4d6bfe;margin-bottom:18px}"
     ".sub{color:#7d879e;margin-top:9px}</style><main><div><div class='fish'>◖°⌁°◗</div>"
-    "<div>正在启动 deepseek harness…</div><div class='sub'>默认 DeepSeek · 可选 OpenAI GPT</div>"
+    "<div>正在启动 DeeepSeek Harness…</div><div class='sub'>默认 DeepSeek · 可选 OpenAI GPT</div>"
     "</div></main></html>";
 }
 
