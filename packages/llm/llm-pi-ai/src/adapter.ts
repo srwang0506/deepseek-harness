@@ -51,6 +51,7 @@ import type { AttachmentStore } from '@deepseek-ai/dsh-attachment'
 import { idleWatchdog, timeoutOf } from '@deepseek-ai/dsh-timeout'
 import type { ResolvedPiAiProviderProfile } from './config.ts'
 import { toPiContext } from './context.ts'
+import { previousOpenAIResponse } from './replay.ts'
 import { toStreamChunks } from './stream.ts'
 
 /** One resolution's frozen view: the profiles and the collection built from them. */
@@ -176,6 +177,26 @@ function requestHeaders(headers: Readonly<Record<string, string>> | undefined): 
     ...Object.fromEntries(Object.entries(headers ?? {}).filter(([name]) => !reserved.has(name.toLowerCase()))),
     ...attribution,
   }
+}
+
+/** Add explicitly enabled first-party Responses fields after pi-ai assembles the body. */
+function openAIResponsesPayload(
+  payload: unknown,
+  profile: ResolvedPiAiProviderProfile,
+  previousResponseId: string | undefined,
+): unknown {
+  const controls = profile.openAIResponses
+  if (controls === undefined || typeof payload !== 'object' || payload === null || Array.isArray(payload)) return payload
+  const body = { ...payload } as Record<string, unknown>
+  if (controls.store !== undefined) body['store'] = controls.store
+  if (previousResponseId !== undefined) body['previous_response_id'] = previousResponseId
+  if (controls.reasoningContext !== undefined) {
+    const reasoning = typeof body['reasoning'] === 'object' && body['reasoning'] !== null && !Array.isArray(body['reasoning'])
+      ? body['reasoning'] as Record<string, unknown>
+      : {}
+    body['reasoning'] = { ...reasoning, context: controls.reasoningContext }
+  }
+  return body
 }
 
 /**
@@ -307,14 +328,24 @@ export class PiAiAdapter extends LlmAdapter {
       if (containsImage && attachments === undefined) {
         throw new LlmError('pi-ai image input requires the durable attachment service', 'UNSUPPORTED_CONTENT')
       }
+      const continuation = model.api === 'openai-responses'
+        && profile.openAIResponses?.previousResponseId === true
+        ? previousOpenAIResponse(options.messages, options.provider, options.model)
+        : undefined
+      const contextOptions = continuation === undefined
+        ? options
+        : { ...options, messages: options.messages.slice(continuation.nextMessageIndex) }
       const context = attachments === undefined
-        ? toPiContext(options)
-        : await toPiContext(options, attachments)
+        ? toPiContext(contextOptions)
+        : await toPiContext(contextOptions, attachments)
       const events = snapshot.models.streamSimple(model, context, {
         ...profileOptions(profile, reasoning, apiKey),
         ...options.temperature === undefined ? {} : { temperature: options.temperature },
         ...options.maxTokens === undefined ? {} : { maxTokens: options.maxTokens },
         ...options.sessionId === undefined ? {} : { sessionId: String(options.sessionId) },
+        ...model.api !== 'openai-responses' || profile.openAIResponses === undefined ? {} : {
+          onPayload: (payload: unknown) => openAIResponsesPayload(payload, profile, continuation?.responseId),
+        },
         signal: watchdog.signal,
         // Profile headers are deployment-owned; attribution names are
         // Harness-owned and therefore win collisions.

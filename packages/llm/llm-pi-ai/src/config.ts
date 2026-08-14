@@ -128,6 +128,19 @@ export interface PiAiProviderProfile {
   thinkingBudgets?: ThinkingBudgets
   /** Prompt-cache retention preference. */
   cacheRetention?: CacheRetention
+  /**
+   * First-party OpenAI Responses request controls. They are applied only to
+   * models whose resolved pi-ai protocol is `openai-responses`; other models
+   * on the same configurable route keep their normal wire shape.
+   */
+  openAIResponses?: {
+    /** Persist responses server-side so a later request can continue by id. */
+    store?: boolean
+    /** Continue from the latest durable same-route response id. Requires `store: true`. */
+    previousResponseId?: boolean
+    /** Provider reasoning-context policy for GPT-5.6 and later. */
+    reasoningContext?: 'all_turns'
+  }
   /** Streaming transport preference. */
   transport?: Transport
   /** HTTP/provider SDK timeout in milliseconds. */
@@ -244,6 +257,11 @@ const profile = z.object({
   reasoning: z.union(THINKING_LEVELS),
   thinkingBudgets,
   cacheRetention: z.union(['none', 'short', 'long']),
+  openAIResponses: z.object({
+    store: z.boolean(),
+    previousResponseId: z.boolean(),
+    reasoningContext: z.union(['all_turns']),
+  }),
   transport: z.union(['sse', 'websocket', 'websocket-cached', 'auto']),
   timeoutMs: z.natural(),
   websocketConnectTimeoutMs: z.natural(),
@@ -315,6 +333,11 @@ export function resolveProfiles(
     if (source.displayName !== undefined && source.displayName.length === 0) {
       throw new Error(`llm-pi-ai: provider "${provider}" has an empty displayName`)
     }
+    if (source.openAIResponses?.previousResponseId === true && source.openAIResponses.store !== true) {
+      throw new Error(
+        `llm-pi-ai: provider "${provider}" openAIResponses.previousResponseId requires store: true`,
+      )
+    }
     const streamIdleTimeoutMs = source.streamIdleTimeoutMs ?? DEFAULT_STREAM_IDLE_TIMEOUT_MS
     if (!Number.isFinite(streamIdleTimeoutMs)
       || streamIdleTimeoutMs <= 0
@@ -357,6 +380,7 @@ export function resolveProfiles(
       retryPolicy: resolveRetryPolicy(retryPolicy, `llm-pi-ai: provider "${provider}" retryPolicy`),
       ...rest.headers === undefined ? {} : { headers: { ...rest.headers } },
       ...rest.thinkingBudgets === undefined ? {} : { thinkingBudgets: { ...rest.thinkingBudgets } },
+      ...rest.openAIResponses === undefined ? {} : { openAIResponses: { ...rest.openAIResponses } },
       configuredMaxTokens: catalog.configuredMaxTokens,
       piProvider: buildProvider({
         provider,

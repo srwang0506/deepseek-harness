@@ -977,6 +977,19 @@ export interface PiAiProviderProfile {
   thinkingBudgets?: ThinkingBudgets
   /** Prompt-cache retention preference. */
   cacheRetention?: CacheRetention
+  /**
+   * First-party OpenAI Responses request controls. They are applied only to
+   * models whose resolved pi-ai protocol is `openai-responses`; other models
+   * on the same configurable route keep their normal wire shape.
+   */
+  openAIResponses?: {
+    /** Persist responses server-side so a later request can continue by id. */
+    store?: boolean
+    /** Continue from the latest durable same-route response id. Requires `store: true`. */
+    previousResponseId?: boolean
+    /** Provider reasoning-context policy for GPT-5.6 and later. */
+    reasoningContext?: 'all_turns'
+  }
   /** Streaming transport preference. */
   transport?: Transport
   /** HTTP/provider SDK timeout in milliseconds. */
@@ -1081,7 +1094,7 @@ type WithheldThinkingFormat = 'chat-template' | 'qwen-chat-template'
 
 依赖：`Api`（`@earendil-works/pi-ai`）· `CacheRetention`（`@earendil-works/pi-ai`）· `Model`（`@earendil-works/pi-ai`）· `ModelThinkingLevel`（`@earendil-works/pi-ai`）· `OpenAICompletionsCompat`（`@earendil-works/pi-ai`）· [`RetryPolicyConfig`](../packages/llm/llm/src/index.ts) · `ThinkingBudgets`（`@earendil-works/pi-ai`）· `Transport`（`@earendil-works/pi-ai`）
 
-来源：[`packages/llm/llm-pi-ai/src/config.ts:172`](../packages/llm/llm-pi-ai/src/config.ts)
+来源：[`packages/llm/llm-pi-ai/src/config.ts:185`](../packages/llm/llm-pi-ai/src/config.ts)
 
 <a id="deepseek-aidsh-llm-replay"></a>
 

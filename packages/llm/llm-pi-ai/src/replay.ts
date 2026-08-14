@@ -121,6 +121,33 @@ function readReplayState(value: unknown): PiAiReplayState {
   return state as unknown as PiAiReplayState
 }
 
+/**
+ * Find the latest durable first-party Responses cursor that can continue this
+ * exact route. A foreign or later assistant response breaks the chain: the
+ * caller must send full history instead of attaching an unrelated response id.
+ * @param messages - provider-neutral request history in durable order.
+ * @param provider - exact configured provider route.
+ * @param model - exact model id selected for this call.
+ * @returns the response id and the number of history messages it replaces.
+ */
+export function previousOpenAIResponse(
+  messages: readonly Message[],
+  provider: string,
+  model: string,
+): { responseId: string; nextMessageIndex: number } | undefined {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index]
+    if (message?.role !== 'assistant') continue
+    const source = message.source
+    if (source.kind !== 'model' || source.provider !== provider || source.model !== model
+      || source.replayState === undefined) return undefined
+    const state = readReplayState(source.replayState)
+    if (state.api !== 'openai-responses' || state.responseId === undefined) return undefined
+    return { responseId: state.responseId, nextMessageIndex: index + 1 }
+  }
+  return undefined
+}
+
 /** Convert provider-neutral blocks without trusting them as same-model replay. */
 function foreignAssistant(message: Message): AssistantMessage {
   const source = message.source.kind === 'model' ? message.source : undefined

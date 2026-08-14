@@ -7,7 +7,7 @@ import type {
   SaveImageAttachment,
   StoredImageAttachment,
 } from '@deepseek-ai/dsh-attachment'
-import LlmRuntime, { createUserMessage, CONTEXT_WINDOW_EXCEEDED_CODE, LlmError, ReasoningEffortId, userAgent } from '@deepseek-ai/dsh-llm'
+import LlmRuntime, { createAssistantMessage, createUserMessage, CONTEXT_WINDOW_EXCEEDED_CODE, LlmError, ReasoningEffortId, userAgent } from '@deepseek-ai/dsh-llm'
 import * as LlmPiAi from '@deepseek-ai/dsh-llm-pi-ai'
 import { PiAiAdapter } from '@deepseek-ai/dsh-llm-pi-ai'
 import { MAX_TIMER_DELAY_MS } from '@deepseek-ai/dsh-timeout'
@@ -196,6 +196,72 @@ describe('PiAiAdapter provider routing', () => {
     const result = await assemble(ctx, { provider: 'openai', model: 'gpt-4.1', messages: [] })
     expect(result.finish.kind).toBe('error')
     expect(server.paths).toEqual(['/v1/responses'])
+  })
+
+  it('continues stored OpenAI Responses with all-turn reasoning context and a stable cache key', async () => {
+    const server = await mockServer([{ status: 401, body: JSON.stringify({ error: { message: 'captured' } }) }])
+    const ctx = new Context()
+    await ctx.plugin(LlmRuntime)
+    await ctx.plugin(LlmPiAi, {
+      providers: {
+        openai: {
+          apiKeyEnv: 'PI_TEST_KEY',
+          baseURL: `${server.url}/v1`,
+          reasoning: 'high',
+          cacheRetention: 'long',
+          openAIResponses: {
+            store: true,
+            previousResponseId: true,
+            reasoningContext: 'all_turns',
+          },
+        },
+      },
+    })
+    const result = await assemble(ctx, {
+      provider: 'openai',
+      model: 'gpt-5.6-sol',
+      sessionId: 'sol-session' as never,
+      messages: [
+        createUserMessage({
+          content: [{ type: 'text', text: 'old turn' }],
+          source: { kind: 'user' },
+        }),
+        createAssistantMessage({
+          content: [{ type: 'text', text: 'old answer' }],
+          source: {
+            provider: 'openai',
+            model: 'gpt-5.6-sol',
+            replayState: {
+              kind: 'pi-ai',
+              version: 1,
+              api: 'openai-responses',
+              provider: 'openai',
+              model: 'gpt-5.6-sol',
+              responseId: 'resp_previous',
+              stopReason: 'stop',
+              blocks: [{ type: 'text' }],
+            },
+          },
+        }),
+        createUserMessage({
+          content: [{ type: 'text', text: 'new turn' }],
+          source: { kind: 'user' },
+        }),
+      ],
+    })
+
+    expect(result.finish.kind).toBe('error')
+    expect(server.requests[0]).toMatchObject({
+      model: 'gpt-5.6-sol',
+      store: true,
+      previous_response_id: 'resp_previous',
+      prompt_cache_key: 'sol-session',
+      prompt_cache_retention: '24h',
+      reasoning: { effort: 'high', context: 'all_turns' },
+    })
+    expect(JSON.stringify(server.requests[0])).toContain('new turn')
+    expect(JSON.stringify(server.requests[0])).not.toContain('old turn')
+    expect(JSON.stringify(server.requests[0])).not.toContain('old answer')
   })
 
   it('resolves an attachment service mounted after the adapter when dispatching an image', async () => {
@@ -709,6 +775,9 @@ describe('provider profile lifecycle', () => {
     expect(() => resolveProfiles({ openai: { provider: 'openai' } as never })).toThrow(/moved to the providers dict key/)
     expect(() => resolveProfiles({ openai: { baseURL: '' } })).toThrow(/empty baseURL/)
     expect(() => resolveProfiles({ openai: { apiKeyEnv: 'not-a-var!' } })).toThrow(/must match/)
+    expect(() => resolveProfiles({
+      openai: { openAIResponses: { previousResponseId: true } },
+    })).toThrow(/previousResponseId requires store: true/)
   })
 
   it.each(['maxRetries', 'maxRetryDelayMs'] as const)(
