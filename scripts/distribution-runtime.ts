@@ -77,7 +77,10 @@ export function outputArgument(argv: readonly string[], defaultOutput: string): 
  */
 export function assertSafeOutput(outputRoot: string, target: string): void {
   const relative = target.slice(outputRoot.length)
-  if (!target.startsWith(`${outputRoot}/`) || relative.length < 4) {
+  // `sep` is the platform path separator: `/` on POSIX, `\` on Windows. The
+  // builder's output root is a directory, so a safe child must extend it by
+  // the separator before its name.
+  if (!target.startsWith(`${outputRoot}${sep}`) || relative.length < 4) {
     throw new Error(`refusing to replace unsafe distribution output ${target}`)
   }
 }
