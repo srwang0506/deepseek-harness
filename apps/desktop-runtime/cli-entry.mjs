@@ -2,7 +2,7 @@
 
 import { spawn } from 'node:child_process'
 import { mkdir, readFile } from 'node:fs/promises'
-import { homedir } from 'node:os'
+import { homedir, platform } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { createInterface } from 'node:readline/promises'
 import { Writable } from 'node:stream'
@@ -10,7 +10,7 @@ import { fileURLToPath } from 'node:url'
 import { parseDocument } from 'yaml'
 import { withFileLock, writeFileAtomic } from '@deepseek-ai/dsh-atomic-write'
 
-const PRODUCT_NAME = 'DeeepSeek Harness'
+const PRODUCT_NAME = 'DeepSeek Harness'
 const runtimeRoot = dirname(fileURLToPath(import.meta.url))
 const distributionRoot = resolve(runtimeRoot, '../..')
 const nodeExecutable = join(distributionRoot, 'runtime/node')
@@ -18,23 +18,26 @@ const dshEntrypoint = join(runtimeRoot, 'node_modules/@deepseek-ai/dsh/lib/bin.j
 const oauthEntrypoint = join(runtimeRoot, 'openai-oauth.mjs')
 const cliPatch = join(distributionRoot, 'config/cli.cordis.patch.yml')
 const desktopPatch = join(distributionRoot, 'config/desktop.cordis.patch.yml')
-const dshHome = resolve(process.env.DSH_HOME ?? join(homedir(), 'Library/Application Support/DeepSeek Harness'))
+const platformDataHome = platform() === 'darwin'
+  ? join(homedir(), 'Library/Application Support/DeepSeek Harness')
+  : join(process.env.XDG_DATA_HOME ?? join(homedir(), '.local/share'), 'deepseek-harness')
+const dshHome = resolve(process.env.DSH_HOME ?? platformDataHome)
 const settingsPath = join(dshHome, 'settings.yaml')
 const credentialPath = join(dshHome, 'pi-ai-auth.json')
 
 const HELP = `${PRODUCT_NAME} CLI
 
 Usage:
-  deeepseek-harness <task...>                    run one coding task and exit
-  deeepseek-harness run <task...>                same as above
-  deeepseek-harness web [web options...]          start the Harness web UI
-  deeepseek-harness login [browser|device|api-key]
-  deeepseek-harness status                       show OpenAI login status
-  deeepseek-harness logout                       remove the OpenAI credential
-  deeepseek-harness model                        show the selected default model
-  deeepseek-harness model deepseek               select DeepSeek V4 Flash
-  deeepseek-harness model gpt [model] [effort]   select OpenAI GPT
-  deeepseek-harness raw <dsh arguments...>       invoke the bundled dsh CLI
+  deepseek-harness <task...>                    run one coding task and exit
+  deepseek-harness run <task...>                same as above
+  deepseek-harness web [web options...]          start the Harness web UI
+  deepseek-harness login [browser|device|api-key]
+  deepseek-harness status                       show OpenAI login status
+  deepseek-harness logout                       remove the OpenAI credential
+  deepseek-harness model                        show the selected default model
+  deepseek-harness model deepseek               select DeepSeek V4 Flash
+  deepseek-harness model gpt [model] [effort]   select OpenAI GPT
+  deepseek-harness raw <dsh arguments...>       invoke the bundled dsh CLI
 
 The CLI and App share settings, sessions, and OpenAI credentials. DeepSeek is
 the installation default; GPT remains opt-in and requires one login method.

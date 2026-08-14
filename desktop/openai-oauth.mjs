@@ -17,15 +17,35 @@ const credentials = new PiAiCredentialStore(credentialStorePath)
 const models = createModels({ credentials })
 models.setProvider(openaiCodexProvider())
 
-function openBrowser(url) {
-  const task = spawn('/usr/bin/open', [url], { detached: true, stdio: 'ignore' })
+function detached(command, args) {
+  const task = spawn(command, args, { detached: true, stdio: 'ignore' })
+  task.once('error', () => undefined)
   task.unref()
+  return true
+}
+
+function openBrowser(url) {
+  if (process.platform === 'darwin') return detached('/usr/bin/open', [url])
+  if (process.platform === 'linux' && (process.env.DISPLAY || process.env.WAYLAND_DISPLAY)) {
+    return detached('xdg-open', [url])
+  }
+  return false
+}
+
+function clipboardCommand() {
+  if (process.platform === 'darwin') return ['/usr/bin/pbcopy', []]
+  if (process.env.WAYLAND_DISPLAY) return ['wl-copy', []]
+  if (process.env.DISPLAY) return ['xclip', ['-selection', 'clipboard']]
+  return undefined
 }
 
 function copyToClipboard(value) {
-  const task = spawn('/usr/bin/pbcopy', [], { stdio: ['pipe', 'ignore', 'ignore'] })
+  const command = clipboardCommand()
+  if (command === undefined) return false
+  const task = spawn(command[0], command[1], { stdio: ['pipe', 'ignore', 'ignore'] })
   task.once('error', () => undefined)
   task.stdin.end(value)
+  return true
 }
 
 async function readSecret() {
@@ -57,12 +77,16 @@ async function loginOAuth(method) {
     },
     notify: (event) => {
       if (event.type === 'auth_url') {
-        openBrowser(event.url)
-        process.stdout.write('已在浏览器中打开 OpenAI 登录页。完成授权后请返回 DeeepSeek Harness。\n')
+        const opened = openBrowser(event.url)
+        process.stdout.write(opened
+          ? '已在浏览器中打开 OpenAI 登录页。完成授权后请返回 DeepSeek Harness。\n'
+          : `请在浏览器中打开 ${event.url} 完成 OpenAI 授权。\n`)
       } else if (event.type === 'device_code') {
-        copyToClipboard(event.userCode)
-        openBrowser(event.verificationUri)
-        process.stdout.write(`设备码 ${event.userCode} 已复制到剪贴板，并已打开验证页面。\n`)
+        const copied = copyToClipboard(event.userCode)
+        const opened = openBrowser(event.verificationUri)
+        process.stdout.write(`设备码：${event.userCode}\n验证地址：${event.verificationUri}\n`)
+        if (copied) process.stdout.write('设备码已复制到剪贴板。\n')
+        if (opened) process.stdout.write('验证页面已在浏览器中打开。\n')
       } else if (event.type === 'progress' || event.type === 'info') {
         process.stdout.write(`${event.message}\n`)
       }
@@ -72,7 +96,7 @@ async function loginOAuth(method) {
 }
 
 async function loginApiKey() {
-  const key = assertUsableApiKey(await readSecret(), 'DeeepSeek Harness', 'OpenAI API Key 输入框')
+  const key = assertUsableApiKey(await readSecret(), 'DeepSeek Harness', 'OpenAI API Key 输入框')
   await credentials.modify(providerId, async () => ({ type: 'api_key', key }))
   process.stdout.write('OpenAI API Key 已保存。GPT 请求将使用标准 OpenAI Responses API。\n')
 }

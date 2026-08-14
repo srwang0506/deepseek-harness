@@ -1,4 +1,4 @@
-# Agent Note: DeepSeek 优先桌面版中的 Pi OAuth GPT 模型
+# Agent Note: DeepSeek 优先原生发行版中的 Pi OAuth GPT 模型
 
 Status: implemented
 
@@ -6,44 +6,46 @@ Status: implemented
 
 ## 问题
 
-macOS 发行版应继续使用 DeepSeek Harness 作为 agent 运行时、以 DeepSeek 作为默认模型，同时允许用户通过符合条件的 ChatGPT 订阅权限或 OpenAI Platform API key 选择 GPT 模型。把 Codex CLI 或 Codex app-server 当作 subagent 不满足这个要求：它会把工作移进第二套 agent loop，而不是更换既有 Harness loop 背后的 LLM。把 Codex token 复制到 API-key 路由也会绕过提供方拥有的刷新与凭据语义，而只呈现 API-key 输入框又会排除订阅登录。
+原生发行版应继续使用 DeepSeek Harness 作为 agent 运行时、以 DeepSeek 作为默认模型，同时允许用户通过符合条件的 ChatGPT 订阅权限或 OpenAI Platform API key 选择 GPT。把 Codex CLI 或 Codex app-server 当作 subagent 不满足这个要求，因为它会把工作移进第二套 loop，而不是更换 Harness 使用的 LLM。交付物还需要统一的产品名称、可拖动的 macOS App、适合服务器的 Linux CLI，以及一条 GitHub 安装路径。
 
-本决策取代较早[OpenAI Responses 桌面决策](2026-08-14-openai-responses-codex-desktop.md)中有关桌面默认模型、OAuth、委派和图标的部分。旧记录继续负责通用 API-key Responses 控制与可移动桌面打包闭包。
+本决策取代较早[OpenAI Responses 桌面决策](2026-08-14-openai-responses-codex-desktop.md)中有关桌面默认模型、OAuth、委派、图标和产品命名的部分。旧记录继续负责通用 API-key Responses 控制与可移动生产依赖闭包。
 
 ## 决策
 
-桌面组合保留 `deepseek-official/deepseek-v4-flash` 为默认模型，并把已安装 pi-ai catalog 的 `openai-codex` 提供方加入为可选路由。选择 `openai-codex/gpt-5.6-sol` 或其他 catalog GPT 模型时，只会更换既有 Harness 主循环选择的 LLM。提示词、持久会话、Shell 与补丁工具、Skills、MCP、工具搜索、程序化工具调用和 Agent 编排仍由 Harness 拥有。桌面运行时不再内置 Codex CLI，也不再挂载 Codex 子代理提供方。
+所有面向用户的发行版都叫 `DeepSeek Harness`，所有 CLI 都安装 `deepseek-harness`。macOS 构建生成 `DeepSeek Harness.app`、自包含 macOS CLI 及两个 ARM64 ZIP。共享发行构建器会部署生产 dsh 闭包，补回旧式 hoist 的 workspace 包，将包管理器链接实体化，复制宿主原生 Node.js 可执行文件，并拒绝任何残留符号链接。Linux 构建器复用同一闭包，生成原生 x64 与 ARM64 tar 归档。macOS 状态继续保存在 `~/Library/Application Support/DeepSeek Harness`；Linux 遵循 `${XDG_DATA_HOME:-~/.local/share}/deepseek-harness`；`DSH_HOME` 可覆盖两者。
 
-`dsh-llm-pi-ai` 接受绝对路径形式的顶层 `credentialStorePath`，并把持久化 `CredentialStore` 注入每份不可变 pi-ai `Models` 快照。存储使用 pi-ai 规范凭据形状、仅所有者可访问的目录和文件权限、完整文档原子替换，以及共享的跨进程文件锁。因此 Pi 拥有提供方 OAuth 解析，并在存储的串行 `modify` 操作内执行 token 刷新。普通 API-key 路由继续使用 Harness 凭据引用路径与按请求覆盖语义；桌面 App 还可以在逻辑 `openai-codex` 路由下存储规范 API-key 凭据。
+macOS App 从仓库小鲸鱼路径生成白色圆角底图上的黑色小鲸鱼图标。普通 AppKit 标题栏负责原生窗口拖动。bundle 会先清除 AppleDouble，再完成签名和验证，然后归档。
 
-交互登录仍由组合拥有。AppKit `WKWebView` 中的文档起始脚本会拦截尚未认证的 `openai-codex` `session.selectModel` 请求，暂停请求，并提供 ChatGPT 浏览器 OAuth、ChatGPT 设备码 OAuth 或 OpenAI Platform API key。App 菜单打开同一个选择界面。打包后的 CLI 通过 `deeepseek-harness login` 暴露同样三种方式。小型内置 helper 会为两种 OAuth 方式调用 `Models.login('openai-codex', 'oauth', interaction)`，或校验并存储经标准输入读取的 API key；状态会报告已存方式，退出则调用 `Models.logout()`。它不读取或复用 Codex CLI 文件，密钥也绝不出现在 helper 的命令行参数中。
+组合保留 `deepseek-official/deepseek-v4-flash` 为默认模型，并把 pi-ai catalog 的 `openai-codex` 提供方加入为可选路由。选择 `openai-codex/gpt-5.6-sol` 或其他 catalog GPT 模型时，只会更换既有 Harness 主循环使用的 LLM。提示词、持久会话、Shell 与补丁工具、Skills、MCP、工具搜索、程序化工具调用和 Agent 编排仍由 Harness 拥有。运行时不内置 Codex CLI，也不挂载 Codex 子代理提供方。
 
-ChatGPT OAuth 完整保留 pi-ai 的 `openai-codex-responses` 模型 descriptor 与提供方实现。ChatGPT Codex 后端使用 `store: false`，通用 API-key Responses 路由的控制不会被强行套用到这里。同一逻辑路由存储 API key 时，适配器会把所选模型重新绑定到 pi-ai 的标准 `openai` Responses 提供方进行分派，启用 `store`、持久化 `previous_response_id` 与 `reasoning.context: "all_turns"`，再把回放元数据记录在原始路由与模型下。两种认证路径都保留 high 推理、长时 cache、自动传输选择、Harness session id 与 catalog 的推理档位。
+`dsh-llm-pi-ai` 接受绝对路径形式的顶层 `credentialStorePath`，并把持久化 `CredentialStore` 注入不可变 pi-ai `Models` 快照。存储使用 pi-ai 规范凭据形状、仅所有者可访问的权限、完整文档原子替换，以及共享的跨进程文件锁。Pi 拥有提供方 OAuth 解析与 token 刷新。API key 保留 Harness 凭据引用路径与按请求覆盖语义；原生组合还可以在逻辑 `openai-codex` 路由下存储规范 API-key 凭据。
 
-App 图标在构建时从仓库小鲸鱼路径生成，采用白色圆角底图与黑色小鲸鱼。产品与原生 bundle 名称是 `DeeepSeek Harness`。窗口由普通 AppKit 标题栏负责可靠的原生拖动，不再使用被 WebView 覆盖的透明标题栏。状态与日志目录保留较早的 `DeepSeek Harness` 名称，因此升级会保留设置、会话和凭据。
+交互登录仍由组合拥有。App 会暂停尚未认证的 `openai-codex` `session.selectModel` 请求，并提供 ChatGPT 浏览器 OAuth、ChatGPT 设备码 OAuth，或 OpenAI Platform API key。打包后的 CLI 通过 `deepseek-harness login` 暴露同样选择。在无桌面的 Linux 服务器上，即使没有 GUI 或剪贴板工具，设备登录也始终打印设备码和验证网址。API key 经标准输入读取，绝不会出现在 helper 命令行参数中。
 
-macOS 构建还会生成自包含的 `DeeepSeek Harness CLI` 发行包。其 `deeepseek-harness` 启动器复用打包后的 dsh 运行时，以及与 App 相同的 pi 提供方、凭据文档、设置和会话。直接传入任务会调用随附 headless profile 一次后退出；`web` 启动浏览器界面；`login`、`status`、`logout` 与 `model` 是发行包拥有的便利命令。这是终端原生的一次性界面，不是常驻 TUI，也不是第二套 agent 实现。
+ChatGPT OAuth 保留 pi-ai 的 `openai-codex-responses` 实现与 `store: false` 传输语义。同一逻辑路由存储 API key 时，适配器会经 pi-ai 的标准 `openai` Responses 提供方分派，启用服务端响应存储、持久化 `previous_response_id` 与 `reasoning.context: "all_turns"`，再把回放元数据记录在原始路由与模型下。两种路径都保留 high 推理、长时 cache、自动传输选择、Harness session id 与 catalog 支持的推理档位。
+
+POSIX 安装器会识别 macOS ARM64、Linux x64 或 Linux ARM64，从 GitHub Release 下载匹配文件，按 `SHA256SUMS` 校验每个文件，备份已有安装和旧错误命名安装，并创建稳定的 `~/.local/bin/deepseek-harness` 链接。tag 触发的 workflow 在 GitHub 原生 runner 上构建全部平台，并发布四个归档、安装器和校验清单。服务器 Web 界面在文档中只监听 loopback，远程访问使用 SSH 隧道。
 
 ## 验证
 
-凭据存储测试覆盖存储不存在、API-key 与 OAuth 持久化、私有权限、并发写入、删除、回调失败及格式错误文档。配置测试要求仅支持 OAuth 的路由使用绝对存储路径，同时不破坏仍可用 API key 认证的提供方。适配器测试固定已存密钥分派到 `/v1/responses`、第一方 Responses 控制与逻辑回放身份。jsdom 测试固定分派前的三选一界面，并验证模型选择会保持暂停，直到认证成功。CLI 入口测试会用临时共享 home 执行帮助与模型选择路径。桌面闭包、原生编译、App 签名、AppleDouble 清理、零符号链接打包、两个归档的 smoke 以及真实 loopback 启动共同覆盖交付产物。
+凭据存储测试覆盖 API-key 与 OAuth 持久化、私有权限、并发写入、删除、回调失败及格式错误文档。适配器测试固定已存密钥分派到 `/v1/responses`、Responses 控制与逻辑回放身份。界面测试固定分派前的三选一登录，并要求模型选择保持暂停直到认证成功。发行测试固定准确的产品与文件名称、标题栏行为、支持的 GitHub runner、Linux 状态路径、无桌面 OAuth 输出，以及针对本地夹具归档完成的一次真实校验和安装。macOS 验证还覆盖原生编译、签名、AppleDouble 清理、零符号链接打包、归档 smoke 与真实 loopback 启动。GitHub Release job 会在原生架构上 smoke Linux 产物。
 
 ## 考虑过的替代方案
 
-**把 Codex 作为子代理内置。** 这会在一次委派调用后运行另一个产品的 loop 与工具，无法让 GPT 成为 DeepSeek Harness loop 使用的模型，因此已从桌面组合移除。
+**把 Codex 作为子代理内置。** 这会在一次委派调用后运行另一个产品的 loop，无法让 GPT 成为 DeepSeek Harness loop 使用的模型。
 
-**把 GPT 设为桌面默认模型。** 所要求的产品姿态是 DeepSeek 优先、GPT 可选。覆盖 `agent-default-model` 会让未登录 OAuth 的首次使用失败，也会抹掉这一默认行为。
+**把 GPT 设为发行版默认模型。** 所要求的产品姿态是 DeepSeek 优先。缺少 OpenAI 登录不能破坏首次使用。
 
-**强制使用 API key。** API key 是有效的显式选择，但若强制使用它，就会排除 ChatGPT 订阅权限，并复现本决策要修正的误导性 API-key-only 登录界面。
+**强制 API key 或复用 Codex CLI 凭据。** 强制密钥会排除 ChatGPT 订阅权限；复用另一个客户端的私有凭据文件会耦合存储与刷新行为。Pi 提供方拥有的 OAuth 流程让这些关注点保持独立。
 
-**复用 Codex CLI 凭据文件。** 私有 Codex 文件会让 Harness 绑定另一个客户端的存储与刷新行为。Pi 提供方拥有的 OAuth 流程与桌面 App 的规范凭据存储让两个产品保持独立。
+**通过 ChatGPT Codex 传输发送 API key。** 该提供方以订阅后端为目标，并声明 OAuth 认证。标准 OpenAI 提供方才是 Platform key 对应的公共 Responses API 路径。
 
-**通过 ChatGPT Codex 传输发送 API key。** `openai-codex` 提供方以订阅后端为目标，并声明 OAuth 认证。经 pi-ai 的标准 `openai` 提供方分派已存密钥，可以保留界面中的 Harness 逻辑路由，同时使用正确的公共 Responses API。
+**从 macOS 交叉编译 Linux。** 归档包含宿主原生 Node.js 可执行文件与原生依赖闭包，因此由原生 Linux x64 和 ARM64 runner 构建更可靠。
 
-**在桌面启动器中重新实现 OpenAI 协议。** Pi 已经拥有模型 catalog、OAuth、刷新、传输、响应回放与兼容行为。另一套客户端会分裂这些事实，并与 Harness 适配器使用的路由逐渐漂移。
+**只发布源码或 npm 全局安装器。** 这些方式要求服务器准备工具链，并暴露包管理器布局差异。发行归档自包含且会校验哈希。
 
-**构建一套独立的交互式 CLI agent。** 新的终端 agent loop 会重复 Harness 的会话、工具、提供方与认证行为。包装官方 headless 与 Web profile 可让 CLI 留在同一运行时；若以后明确需要常驻 TUI，可以单独设计。
+**让 Web UI 公开监听。** 内置界面不提供公网边缘认证。loopback 加 SSH 隧道可以让远程使用保持在既有安全边界内。
 
 ## 后果
 
-全新安装在进行任何 OpenAI 登录前即可使用 DeepSeek。选择 GPT 会自动显示三种认证方式；其中一种成功后，GPT 仍作为普通提供方／模型选项出现，全部 Harness 原生能力留在同一个 loop 中。App 与 CLI 共用一份含机密的文件和模型选择，因此文件权限、经标准输入传送密钥、原子写入、刷新加锁、退出和可归因登录错误都属于两者的安全边界。ChatGPT 与 API-key 请求有意使用不同传输和计费关系，即使模型选择器保持一条逻辑路由。完整替换旧 bundle 与清理 AppleDouble 是部署不变量；不支持把新文件复制合并进已经签名的 App 目录。
+全新安装在进行任何 OpenAI 登录前即可使用 DeepSeek。选择 GPT 会显示三种认证方式，全部 Harness 原生能力留在同一个 loop 中。ChatGPT 与 API-key 请求有意使用不同传输和计费关系，同时模型选择器保留一条逻辑路由。macOS、Linux x64 和 Linux ARM64 共用一个命令名与一个发行安装器，但运行时归档必须在原生平台构建和测试。替换前会备份已有目标，而不是合并目录，因此已签名 bundle 与自包含运行时可以原子替换并保留恢复路径。

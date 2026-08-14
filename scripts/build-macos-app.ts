@@ -1,10 +1,18 @@
 /** Build the self-contained native macOS desktop distribution. */
 
-import { spawn } from 'node:child_process'
-import { existsSync } from 'node:fs'
-import { chmod, copyFile, cp, lstat, mkdir, readFile, readdir, realpath, rm, writeFile } from 'node:fs/promises'
-import { dirname, join, resolve, sep } from 'node:path'
-import { fileURLToPath, pathToFileURL } from 'node:url'
+import { chmod, copyFile, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
+import { join, resolve } from 'node:path'
+import { pathToFileURL } from 'node:url'
+import {
+  assertSafeOutput,
+  outputArgument,
+  populateCliDistribution,
+  PRODUCT_NAME,
+  removeAppleDouble,
+  repoRoot,
+  run,
+  stagePackagedRuntime,
+} from './distribution-runtime.ts'
 
 interface SharpPipeline {
   resize(width: number, height: number): SharpPipeline
@@ -14,35 +22,7 @@ interface SharpPipeline {
 
 type SharpFactory = (input: Buffer) => SharpPipeline
 
-const PRODUCT_NAME = 'DeeepSeek Harness'
-const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const defaultOutput = resolve(repoRoot, '../../outputs')
-
-function outputArgument(argv: readonly string[]): string {
-  const index = argv.indexOf('--output')
-  if (index < 0) return defaultOutput
-  const value = argv[index + 1]
-  if (value === undefined || value.length === 0) throw new Error('--output needs a directory')
-  return resolve(value)
-}
-
-async function run(command: string, args: readonly string[], cwd = repoRoot): Promise<void> {
-  await new Promise<void>((resolvePromise, reject) => {
-    const child = spawn(command, [...args], { cwd, stdio: 'inherit', env: process.env })
-    child.once('error', reject)
-    child.once('exit', (code, signal) => {
-      if (code === 0) resolvePromise()
-      else reject(new Error(`${command} exited with ${code ?? signal ?? 'unknown status'}`))
-    })
-  })
-}
-
-function assertSafeOutput(outputRoot: string, target: string): void {
-  const relative = target.slice(outputRoot.length)
-  if (!target.startsWith(`${outputRoot}/`) || relative.length < 4) {
-    throw new Error(`refusing to replace unsafe desktop output ${target}`)
-  }
-}
 
 async function iconFactory(): Promise<SharpFactory> {
   const entrypoint = join(
@@ -87,94 +67,6 @@ async function buildIcon(iconset: string, destination: string): Promise<void> {
   await run('iconutil', ['-c', 'icns', iconset, '-o', destination])
 }
 
-/**
- * Legacy deploy can hoist direct workspace dependencies beside the source
- * manifest instead of materializing them in the target. Restore only those
- * declared packages, without copying their package-local node_modules trees.
- */
-async function restoreLegacyHoists(deployedRoot: string): Promise<void> {
-  const manifest = JSON.parse(await readFile(join(deployedRoot, 'package.json'), 'utf8')) as {
-    dependencies?: Record<string, string>
-  }
-  const sourceNodeModules = join(repoRoot, 'apps/desktop-runtime/node_modules')
-  const restored: string[] = []
-  for (const dependency of Object.keys(manifest.dependencies ?? {}).sort()) {
-    const destination = join(deployedRoot, 'node_modules', dependency)
-    if (existsSync(destination)) continue
-    const source = join(sourceNodeModules, dependency)
-    if (!existsSync(source)) {
-      throw new Error(`desktop runtime dependency ${dependency} is missing from deploy and source install`)
-    }
-    const nestedNodeModules = join(source, 'node_modules')
-    await mkdir(dirname(destination), { recursive: true })
-    await cp(source, destination, {
-      recursive: true,
-      dereference: true,
-      filter: path => path !== nestedNodeModules && !path.startsWith(`${nestedNodeModules}${sep}`),
-    })
-    restored.push(dependency)
-  }
-  if (restored.length > 0) console.log(`Restored legacy deploy hoists: ${restored.join(', ')}`)
-}
-
-/** Replace every package-manager link with movable bytes inside the app. */
-async function materializeStagedLinks(deployedRoot: string): Promise<void> {
-  const nodeModules = join(deployedRoot, 'node_modules')
-  let remaining = await findSymlink(nodeModules)
-  while (remaining !== undefined) {
-    const source = await realpath(remaining)
-    const nestedNodeModules = join(source, 'node_modules')
-    await rm(remaining, { recursive: true, force: true })
-    await cp(source, remaining, {
-      recursive: true,
-      dereference: true,
-      filter: path => path !== nestedNodeModules && !path.startsWith(`${nestedNodeModules}${sep}`),
-    })
-    remaining = await findSymlink(nodeModules)
-  }
-}
-
-async function findSymlink(directory: string): Promise<string | undefined> {
-  for (const entry of await readdir(directory, { withFileTypes: true })) {
-    const path = join(directory, entry.name)
-    const metadata = await lstat(path)
-    if (metadata.isSymbolicLink()) return path
-    if (metadata.isDirectory()) {
-      const nested = await findSymlink(path)
-      if (nested !== undefined) return nested
-    }
-  }
-  return undefined
-}
-
-/** Remove Finder AppleDouble entries before signing or archiving a distribution. */
-async function removeAppleDouble(directory: string): Promise<void> {
-  for (const entry of await readdir(directory, { withFileTypes: true })) {
-    const path = join(directory, entry.name)
-    if (entry.name.startsWith('._')) {
-      await rm(path, { recursive: true, force: true })
-    } else if (entry.isDirectory()) {
-      await removeAppleDouble(path)
-    }
-  }
-}
-
-function cliWrapper(): string {
-  return `#!/bin/sh
-set -eu
-script_path=$0
-while [ -L "$script_path" ]; do
-  link_target=$(readlink "$script_path")
-  case "$link_target" in
-    /*) script_path=$link_target ;;
-    *) script_path=$(dirname -- "$script_path")/$link_target ;;
-  esac
-done
-bin_dir=$(CDPATH= cd -- "$(dirname -- "$script_path")" && pwd)
-exec "$bin_dir/../runtime/node" "$bin_dir/../runtime/dsh/deeepseek-cli.mjs" "$@"
-`
-}
-
 function infoPlist(version: string): string {
   return `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -199,15 +91,18 @@ function infoPlist(version: string): string {
 
 async function main(): Promise<void> {
   if (process.platform !== 'darwin') throw new Error('the desktop builder requires macOS')
-  const outputRoot = outputArgument(process.argv.slice(2))
+  const outputRoot = outputArgument(process.argv.slice(2), defaultOutput)
   const appRoot = join(outputRoot, `${PRODUCT_NAME}.app`)
-  const appZipPath = join(outputRoot, 'deeepseek-harness-macos-arm64.zip')
+  const appZipPath = join(outputRoot, 'deepseek-harness-macos-arm64.zip')
   const cliRoot = join(outputRoot, `${PRODUCT_NAME} CLI`)
-  const cliZipPath = join(outputRoot, 'deeepseek-harness-cli-macos-arm64.zip')
+  const cliZipPath = join(outputRoot, 'deepseek-harness-cli-macos-arm64.zip')
   const stageRoot = join(outputRoot, '.desktop-build')
   const legacyTargets = [
     join(outputRoot, 'deepseek harness.app'),
-    join(outputRoot, 'deepseek-harness-macos-arm64.zip'),
+    join(outputRoot, 'DeeepSeek Harness.app'),
+    join(outputRoot, 'DeeepSeek Harness CLI'),
+    join(outputRoot, 'deeepseek-harness-macos-arm64.zip'),
+    join(outputRoot, 'deeepseek-harness-cli-macos-arm64.zip'),
   ]
   for (const target of [appRoot, appZipPath, cliRoot, cliZipPath, stageRoot, ...legacyTargets]) {
     assertSafeOutput(outputRoot, target)
@@ -223,7 +118,6 @@ async function main(): Promise<void> {
   const macOS = join(contents, 'MacOS')
   const resources = join(contents, 'Resources')
   const runtime = join(resources, 'runtime')
-  const deployedDsh = join(runtime, 'dsh')
   await Promise.all([
     mkdir(macOS, { recursive: true }),
     mkdir(join(resources, 'config'), { recursive: true }),
@@ -231,30 +125,8 @@ async function main(): Promise<void> {
     mkdir(stageRoot, { recursive: true }),
   ])
 
-  await run('pnpm', [
-    '--filter', 'deepseek-harness-desktop-runtime', 'deploy', '--legacy', '--prod',
-    '--config.node-linker=hoisted', '--config.auto-install-peers=false',
-    '--config.link-workspace-packages=true', deployedDsh,
-  ])
-  await restoreLegacyHoists(deployedDsh)
-  await materializeStagedLinks(deployedDsh)
-  // Legacy production deploy changes pnpm's source-install state. Put the
-  // frozen development install back so consecutive desktop builds stay valid.
-  await run('pnpm', ['install', '--offline', '--frozen-lockfile'])
-
-  await copyFile(process.execPath, join(runtime, 'node'))
-  await chmod(join(runtime, 'node'), 0o755)
-  await copyFile(
-    join(repoRoot, 'desktop/desktop.cordis.patch.yml'),
-    join(resources, 'config/desktop.cordis.patch.yml'),
-  )
+  await stagePackagedRuntime(runtime, join(resources, 'config'))
   await copyFile(join(repoRoot, 'desktop/openai-auth-bridge.js'), join(resources, 'openai-auth-bridge.js'))
-  await copyFile(join(repoRoot, 'desktop/openai-oauth.mjs'), join(deployedDsh, 'openai-oauth.mjs'))
-  await copyFile(join(repoRoot, 'apps/desktop-runtime/cli-entry.mjs'), join(deployedDsh, 'deeepseek-cli.mjs'))
-  await copyFile(
-    join(repoRoot, 'desktop/cli.cordis.patch.yml'),
-    join(resources, 'config/cli.cordis.patch.yml'),
-  )
 
   const executable = join(macOS, 'deepseek-harness')
   await run('xcrun', [
@@ -275,22 +147,7 @@ async function main(): Promise<void> {
     '-c', '-k', '--norsrc', '--noextattr', '--noqtn', '--noacl', '--keepParent', appRoot, appZipPath,
   ])
 
-  await mkdir(cliRoot, { recursive: true })
-  await Promise.all([
-    mkdir(join(cliRoot, 'bin'), { recursive: true }),
-    mkdir(join(cliRoot, 'config'), { recursive: true }),
-  ])
-  await cp(runtime, join(cliRoot, 'runtime'), { recursive: true, dereference: true })
-  await Promise.all([
-    copyFile(join(resources, 'config/desktop.cordis.patch.yml'), join(cliRoot, 'config/desktop.cordis.patch.yml')),
-    copyFile(join(resources, 'config/cli.cordis.patch.yml'), join(cliRoot, 'config/cli.cordis.patch.yml')),
-    copyFile(join(repoRoot, 'desktop/README.md'), join(cliRoot, 'README.md')),
-    copyFile(join(repoRoot, 'desktop/README.zh.md'), join(cliRoot, 'README.zh.md')),
-    writeFile(join(cliRoot, 'bin/deeepseek-harness'), cliWrapper(), { mode: 0o755 }),
-  ])
-  await chmod(join(cliRoot, 'runtime/node'), 0o755)
-  await chmod(join(cliRoot, 'bin/deeepseek-harness'), 0o755)
-  await removeAppleDouble(cliRoot)
+  await populateCliDistribution(cliRoot, runtime, join(resources, 'config'))
   await run('ditto', [
     '-c', '-k', '--norsrc', '--noextattr', '--noqtn', '--noacl', '--keepParent', cliRoot, cliZipPath,
   ])

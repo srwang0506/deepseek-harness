@@ -1,7 +1,7 @@
 #import <Cocoa/Cocoa.h>
 #import <WebKit/WebKit.h>
 
-static NSString *const DSHAppName = @"DeeepSeek Harness";
+static NSString *const DSHAppName = @"DeepSeek Harness";
 
 @interface DSHApplicationDelegate : NSObject <NSApplicationDelegate, WKNavigationDelegate, WKScriptMessageHandler>
 @property(nonatomic, strong) NSWindow *window;
@@ -503,7 +503,7 @@ static NSString *const DSHAppName = @"DeeepSeek Harness";
     "font:15px -apple-system,BlinkMacSystemFont,sans-serif}main{height:100%;display:grid;"
     "place-items:center;text-align:center}.fish{font-size:54px;color:#4d6bfe;margin-bottom:18px}"
     ".sub{color:#7d879e;margin-top:9px}</style><main><div><div class='fish'>◖°⌁°◗</div>"
-    "<div>正在启动 DeeepSeek Harness…</div><div class='sub'>默认 DeepSeek · 可选 OpenAI GPT</div>"
+    "<div>正在启动 DeepSeek Harness…</div><div class='sub'>默认 DeepSeek · 可选 OpenAI GPT</div>"
     "</div></main></html>";
 }
 

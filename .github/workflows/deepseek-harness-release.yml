@@ -1,0 +1,137 @@
+name: DeepSeek Harness Release
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - deepseek-harness-v*
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build ${{ matrix.id }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - id: macos-arm64
+            runner: macos-15
+            system: macos
+            architecture: arm64
+          - id: linux-x64
+            runner: ubuntu-24.04
+            system: linux
+            architecture: x64
+          - id: linux-arm64
+            runner: ubuntu-24.04-arm
+            system: linux
+            architecture: arm64
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: pnpm/action-setup@v4
+        with:
+          package_json_file: package.json
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Verify native runner
+        env:
+          EXPECTED_ARCHITECTURE: ${{ matrix.architecture }}
+        run: test "$(node -p process.arch)" = "$EXPECTED_ARCHITECTURE"
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build macOS distributions
+        if: matrix.system == 'macos'
+        run: pnpm run desktop:build -- --output dist
+
+      - name: Build Linux CLI distribution
+        if: matrix.system == 'linux'
+        run: pnpm run server:build -- --output dist
+
+      - name: Smoke release assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "${{ matrix.system }}" == macos ]]; then
+            unzip -tq dist/deepseek-harness-macos-arm64.zip
+            unzip -tq dist/deepseek-harness-cli-macos-arm64.zip
+            dist/'DeepSeek Harness CLI'/bin/deepseek-harness --help >/dev/null
+          else
+            tar -tzf "dist/deepseek-harness-linux-${{ matrix.architecture }}.tar.gz" \
+              'DeepSeek Harness CLI/bin/deepseek-harness' >/dev/null
+            dist/'DeepSeek Harness CLI'/bin/deepseek-harness --help >/dev/null
+          fi
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: deepseek-harness-${{ matrix.id }}
+          path: dist/deepseek-harness-*
+          if-no-files-found: error
+          retention-days: 7
+
+  release:
+    name: Publish GitHub Release
+    if: startsWith(github.ref, 'refs/tags/deepseek-harness-v')
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: deepseek-harness-*
+          path: dist
+          merge-multiple: true
+
+      - name: Assemble release assets
+        run: |
+          set -euo pipefail
+          cp scripts/install-release.sh dist/install.sh
+          chmod 755 dist/install.sh
+          expected=$(mktemp)
+          actual=$(mktemp)
+          printf '%s\n' \
+            deepseek-harness-cli-macos-arm64.zip \
+            deepseek-harness-linux-arm64.tar.gz \
+            deepseek-harness-linux-x64.tar.gz \
+            deepseek-harness-macos-arm64.zip \
+            install.sh > "$expected"
+          find dist -maxdepth 1 -type f -printf '%f\n' | sort > "$actual"
+          diff -u "$expected" "$actual"
+          cd dist
+          sha256sum deepseek-harness-* install.sh | sort -k2 > SHA256SUMS
+          sha256sum -c SHA256SUMS
+
+      - name: Publish retryable release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" dist/* --clobber
+          else
+            gh release create "$TAG" dist/* \
+              --title "DeepSeek Harness $TAG" \
+              --generate-notes \
+              --latest
+          fi
