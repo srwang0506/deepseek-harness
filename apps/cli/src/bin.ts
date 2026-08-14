@@ -92,6 +92,11 @@ switch (invocation.mode) {
     }
     break
   }
+  case 'update': {
+    const { runUpdate } = await import('./update.ts')
+    runUpdate()
+    break
+  }
   case 'provider': {
     const { addProvider, listProviders, removeProvider } = await import('./provider.ts')
     if (invocation.action === 'list') {

@@ -93,6 +93,11 @@ interface McpInvocation {
   url?: string
 }
 
+/** Re-run the published installer for the current platform. */
+interface UpdateInvocation {
+  mode: 'update'
+}
+
 /** Manage pi-ai provider routes. */
 interface ProviderInvocation {
   mode: 'provider'
@@ -120,6 +125,7 @@ export type DshInvocation =
   | DoctorInvocation
   | CompletionInvocation
   | McpInvocation
+  | UpdateInvocation
 
 /** Launcher flags shared by the default command and the `web` alias. */
 interface BootOptions {
@@ -336,6 +342,12 @@ export function parseDshArgs(argv: readonly string[], version: string): DshInvoc
   mcp.command('list').description('list configured MCP servers').action(() => {
     rejectParentOptions('mcp')
     resolved = { mode: 'mcp', action: 'list', name: '', args: [] }
+  })
+
+  const update = program.command('update').description('re-run the published installer for the current platform')
+  update.action(() => {
+    rejectParentOptions('update')
+    resolved = { mode: 'update' }
   })
 
   const provider = program.command('provider').description('manage pi-ai provider routes (third-party models)')
