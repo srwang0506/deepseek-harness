@@ -62,6 +62,8 @@ export interface Config {
   continue: boolean
   /** `--model` override; empty string means the configured default. */
   model: string
+  /** One-shot output format: plain text, a final JSON object, or streaming JSONL. */
+  output: 'text' | 'json' | 'jsonl'
 }
 
 export const Config: z<Config> = z.object({
@@ -69,6 +71,7 @@ export const Config: z<Config> = z.object({
   resumeSessionId: z.string().default(''),
   continue: z.boolean().default(false),
   model: z.string().default(''),
+  output: z.union([z.const('text'), z.const('json'), z.const('jsonl')]).default('text'),
 })
 
 /** The process streams the runner reads/writes; tests substitute captures. */
@@ -165,6 +168,16 @@ async function runOneShot(ctx: Context, config: Config, exit: (code: number) => 
   const { agent } = handle
   await agent.whenIdle()
   const firstSeq = agent.session.seq
+
+  // JSONL mode streams every session event after submission as one JSON line.
+  let disposeStream: (() => void) | undefined
+  if (config.output === 'jsonl') {
+    disposeStream = ctx.on('session/event', (session, event) => {
+      if (session !== agent.session || event.seq < firstSeq) return
+      internals.stdout.write(`${JSON.stringify({ type: event.type, data: event.data })}\n`)
+    })
+  }
+
   agent.followup(createUserMessage({
     content: [{ type: 'text', text: config.task }],
     source: { kind: 'user' },
@@ -172,12 +185,26 @@ async function runOneShot(ctx: Context, config: Config, exit: (code: number) => 
   await agent.whenIdle()
   await sessions.flush(agent.session)
   const outcome = summarize(agent.session.events, firstSeq)
-  internals.stdout.write(outcome.text + '\n')
-  if (outcome.reason?.kind === 'error') {
-    internals.stderr.write(`dsh: ${outcome.reason.error.code}: ${outcome.reason.error.message}\n`)
+  const reason = outcome.reason
+  if (config.output === 'json') {
+    internals.stdout.write(`${JSON.stringify({
+      ok: reason?.kind === 'completed',
+      sessionId: agent.id,
+      provider: selection.provider,
+      model: selection.model,
+      text: outcome.text,
+      turnReason: reason?.kind ?? null,
+      error: reason?.kind === 'error' ? { code: reason.error.code, message: reason.error.message } : null,
+    })}\n`)
+  } else if (config.output !== 'jsonl') {
+    internals.stdout.write(outcome.text + '\n')
+    if (reason?.kind === 'error') {
+      internals.stderr.write(`dsh: ${reason.error.code}: ${reason.error.message}\n`)
+    }
   }
+  disposeStream?.()
   await handle.dispose()
-  exit(outcome.reason?.kind === 'completed' ? 0 : 1)
+  exit(reason?.kind === 'completed' ? 0 : 1)
 }
 
 /** The most recent non-subagent persisted session id, or empty string. */

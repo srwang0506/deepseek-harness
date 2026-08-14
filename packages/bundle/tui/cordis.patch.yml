@@ -38,3 +38,4 @@
         resumeSessionId: !!js ctx.tuiStartup.resumeSessionId ?? ''
         continue: !!js ctx.tuiStartup.continue ?? false
         model: !!js ctx.tuiStartup.model ?? ''
+        output: !!js ctx.tuiStartup.output ?? 'text'

@@ -48,6 +48,7 @@ export const apply = ctx => globalThis.__tuiStartupApply(ctx)
     '    resumeSessionId: !!js ctx.tuiStartup.resumeSessionId ?? \'\'',
     '    continue: !!js ctx.tuiStartup.continue ?? false',
     '    model: !!js ctx.tuiStartup.model ?? \'\'',
+    '    output: !!js ctx.tuiStartup.output ?? \'text\'',
     '- id: tui-startup',
     `  name: ${pathToFileURL(join(dir, 'startup.mjs')).href}`,
     '',
@@ -78,14 +79,28 @@ export const apply = ctx => globalThis.__tuiStartupApply(ctx)
 describe('tui command-line provider', () => {
   it('publishes the parsed invocation to the runner', async () => {
     const { startup, observed } = await bootStartup(['run', 'the', 'tests'])
-    expect(startup).toEqual({ task: 'run the tests', resumeSessionId: '', continue: false, model: '' })
-    expect(observed.runnerConfig).toEqual({ task: 'run the tests', resumeSessionId: '', continue: false, model: '' })
+    expect(startup).toEqual({ task: 'run the tests', resumeSessionId: '', continue: false, model: '', output: 'text' })
+    expect(observed.runnerConfig).toEqual({ task: 'run the tests', resumeSessionId: '', continue: false, model: '', output: 'text' })
     expect(observed.exits).toEqual([])
   })
 
   it('publishes the resume and model flags', async () => {
     const { startup } = await bootStartup(['--resume', 'abc', '-m', 'deepseek-chat'])
-    expect(startup).toEqual({ task: '', resumeSessionId: 'abc', continue: false, model: 'deepseek-chat' })
+    expect(startup).toEqual({ task: '', resumeSessionId: 'abc', continue: false, model: 'deepseek-chat', output: 'text' })
+  })
+
+  it('publishes the json and jsonl output flags', async () => {
+    const json = await bootStartup(['--json', 'run', 'tests'])
+    expect(json.startup?.output).toBe('json')
+    const jsonl = await bootStartup(['--jsonl', 'run', 'tests'])
+    expect(jsonl.startup?.output).toBe('jsonl')
+  })
+
+  it('rejects --json with --jsonl', async () => {
+    const { startup, observed } = await bootStartup(['--json', '--jsonl', 'run'])
+    expect(observed.out).toContain('mutually exclusive')
+    expect(startup).toBeUndefined()
+    expect(observed.exits).toEqual([1])
   })
 
   it('rejects --resume with --continue', async () => {

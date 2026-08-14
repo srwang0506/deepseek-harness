@@ -29,6 +29,8 @@ export interface TuiStartupValues {
   continue: boolean
   /** The `--model` override; empty string means the configured default. */
   model: string
+  /** One-shot output format: plain text, a final JSON object, or streaming JSONL. */
+  output: 'text' | 'json' | 'jsonl'
 }
 
 /** The flag family as commander parsed it. */
@@ -36,6 +38,8 @@ interface TuiOptions {
   resume?: string
   continue?: boolean
   model?: string
+  json?: boolean
+  jsonl?: boolean
 }
 
 /**
@@ -51,10 +55,14 @@ function tuiCommand(): Command {
     .option('--resume <session-id>', 'resume the persisted session with this id')
     .option('-c, --continue', 'resume the most recent session')
     .option('-m, --model <model>', 'the model id (or provider/id) to use')
+    .option('--json', 'one-shot: print one JSON result object on stdout')
+    .option('--jsonl', 'one-shot: stream session events as JSON lines')
     .addHelpText('after', `
 Examples:
   dsh                              start an interactive session
   dsh "run the tests"              answer one task and exit
+  dsh --json "run the tests"       one task, JSON result on stdout
+  dsh --jsonl "run the tests"      one task, streamed JSONL events
   dsh --resume <session-id>        resume an earlier session interactively
   dsh --continue                   resume the most recent session
   dsh -m deepseek-chat "hi"        one task with a specific model
@@ -98,11 +106,15 @@ export function apply(ctx: Context): void {
     if (options.resume !== undefined && options.continue === true) {
       program.error('error: --resume and --continue are mutually exclusive')
     }
+    if (options.json === true && options.jsonl === true) {
+      program.error('error: --json and --jsonl are mutually exclusive')
+    }
     ctx.provide(TUI_STARTUP_SERVICE, {
       task: program.args.join(' '),
       resumeSessionId: options.resume ?? '',
       continue: options.continue === true,
       model: options.model ?? '',
+      output: options.jsonl === true ? 'jsonl' : options.json === true ? 'json' : 'text',
     } satisfies TuiStartupValues)
   })
   parseCmdline(ctx, program)
