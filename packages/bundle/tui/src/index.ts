@@ -550,7 +550,16 @@ async function runInteractive(ctx: Context, config: Config, exit: (code: number)
           return
         case 'model': {
           if (slash.args === '') {
-            store.push({ kind: 'info', text: `model ${selection.provider}/${selection.model}` })
+            const llm = ctx.get('llm')
+            const routes = llm?.listConfigurableProviders() ?? []
+            store.push({ kind: 'info', text: `model ${selection.provider}/${selection.model} (current)` })
+            if (routes.length > 0) {
+              store.push({
+                kind: 'info',
+                text: `providers: ${routes.map(route => route.displayName === route.provider ? route.provider : `${route.provider} (${route.displayName})`).sort().join(', ')}`,
+              })
+            }
+            store.push({ kind: 'info', text: 'switch with /model <provider>/<model>, e.g. /model deepseek-official/deepseek-v4-flash' })
           } else {
             selection = resolveSelection(defaultModel, slash.args)
             selectionRef.current = selection

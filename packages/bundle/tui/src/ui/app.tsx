@@ -29,9 +29,8 @@ export interface AppCallbacks {
 /** Color each row by its presentation kind. */
 function colorOf(kind: UiItem['kind']): string | undefined {
   switch (kind) {
-    case 'user': return 'cyan'
     case 'reasoning': return 'grey'
-    case 'tool': return 'yellow'
+    case 'tool': return 'grey'
     case 'error': return 'red'
     case 'info': return 'grey'
     default: return undefined
@@ -54,10 +53,9 @@ function selectSuggestion(line: string, chosen: string): string {
 function renderRow(item: UiItem): React.ReactNode {
   if (item.kind === 'assistant') return <MarkdownView text={item.text} />
   if (item.kind === 'diff') return <DiffView text={item.text} />
-  const color = colorOf(item.kind)
-  if (item.kind === 'tool') return colored(`  • ${item.text}`, color)
-  if (item.kind === 'user') return colored(`› ${item.text}`, color)
-  return colored(item.text, color)
+  if (item.kind === 'tool') return <Text color="grey">{`  • ${item.text}`}</Text>
+  if (item.kind === 'user') return <Text bold>{`› ${item.text}`}</Text>
+  return colored(item.text, colorOf(item.kind))
 }
 
 /**
@@ -67,14 +65,40 @@ function renderRow(item: UiItem): React.ReactNode {
  */
 export function App({ store, callbacks }: { store: UiStore; callbacks: AppCallbacks }): React.JSX.Element {
   const state = useSyncExternalStore(store.subscribe, store.getSnapshot)
-  const rows = process.stdout.rows ?? 40
+  const rows = process.stdout.rows
   const [input, setInput] = useState('')
   const [promptText, setPromptText] = useState('')
   const [selected, setSelected] = useState(0)
   const inputRef = useRef('')
   const promptTextRef = useRef('')
+  const historyRef = useRef<string[]>([])
+  const historyIndexRef = useRef(-1)
   inputRef.current = input
   promptTextRef.current = promptText
+
+  /** Move the input through previously submitted lines; -1 means not browsing. */
+  const recallHistory = (step: -1 | 1): void => {
+    const history = historyRef.current
+    const current = historyIndexRef.current
+    if (step < 0) {
+      if (history.length === 0) return
+      const index = current < 0 ? history.length - 1 : Math.max(0, current - 1)
+      historyIndexRef.current = index
+      const entry = history[index]
+      if (entry !== undefined) setInput(entry)
+    } else {
+      if (current < 0) return
+      const index = current + 1
+      if (index >= history.length) {
+        historyIndexRef.current = -1
+        setInput('')
+      } else {
+        historyIndexRef.current = index
+        const entry = history[index]
+        if (entry !== undefined) setInput(entry)
+      }
+    }
+  }
 
   useInput((keyInput, key) => {
     const intent = keyIntent(keyInput, key, state.prompt !== undefined, state.prompt?.choices ?? [])
@@ -95,6 +119,8 @@ export function App({ store, callbacks }: { store: UiStore; callbacks: AppCallba
       case 'submit': {
         const line = inputRef.current
         setInput('')
+        historyRef.current = [...historyRef.current, line]
+        historyIndexRef.current = -1
         callbacks.onSubmit(line)
         break
       }
@@ -119,18 +145,23 @@ export function App({ store, callbacks }: { store: UiStore; callbacks: AppCallba
         break
       }
       case 'suggest-up':
-        setSelected(previous => Math.max(0, previous - 1))
+        if (suggestions.length > 0) setSelected(previous => Math.max(0, previous - 1))
+        else recallHistory(-1)
         break
       case 'suggest-down':
-        setSelected(previous => Math.min(Math.max(0, suggestions.length - 1), previous + 1))
+        if (suggestions.length > 0) setSelected(previous => Math.min(Math.max(0, suggestions.length - 1), previous + 1))
+        else recallHistory(1)
         break
       case 'backspace':
+        historyIndexRef.current = -1
         setInput(previous => previous.slice(0, -1))
         break
       case 'clear':
+        historyIndexRef.current = -1
         setInput('')
         break
       case 'append':
+        historyIndexRef.current = -1
         setInput(previous => previous + intent.text)
         break
       case 'none':
