@@ -206,7 +206,9 @@ static NSString *const DSHAppName = @"deepseek harness";
     if (!destination) return NO;
     if ([destination isEqualToString:source.path]) return YES;
     if (![manager removeItemAtURL:link error:error]) return NO;
-  } else if (attributesError.code != NSFileNoSuchFileError) {
+  } else if (![attributesError.domain isEqualToString:NSCocoaErrorDomain]
+             || (attributesError.code != NSFileNoSuchFileError
+                 && attributesError.code != NSFileReadNoSuchFileError)) {
     if (error) *error = attributesError;
     return NO;
   }

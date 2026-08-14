@@ -223,7 +223,9 @@ async function main(): Promise<void> {
   await writeFile(join(contents, 'Info.plist'), infoPlist(rootPackage.version))
   await buildIcon(join(stageRoot, 'AppIcon.iconset'), join(resources, 'AppIcon.icns'))
   await run('codesign', ['--force', '--deep', '--sign', '-', appRoot])
-  await run('ditto', ['-c', '-k', '--sequesterRsrc', '--keepParent', appRoot, zipPath])
+  await run('ditto', [
+    '-c', '-k', '--norsrc', '--noextattr', '--noqtn', '--noacl', '--keepParent', appRoot, zipPath,
+  ])
   await rm(stageRoot, { recursive: true, force: true })
 
   console.log(`Built ${appRoot}`)
