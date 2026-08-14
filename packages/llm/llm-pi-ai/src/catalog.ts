@@ -143,16 +143,13 @@ export function catalogProviderIds(): readonly string[] {
 
 /**
  * Whether the installed catalog provider for one route declares an api-key
- * method — the only authentication this adapter obtains on its own.
+ * method — the authentication a generic settings card can configure today.
  *
  * A key is what the harness resolves through its own credential seam and hands
- * pi-ai per request. pi-ai's other method, OAuth, resolves from a *stored*
- * OAuth credential alone: `resolveProviderAuth` has no ambient path for it,
- * this adapter builds its `Models` collection with no credential store, and
- * nothing here runs a login flow. So a provider offering OAuth by itself
- * leaves nothing for this adapter to authenticate with, and the posture such a
- * provider invites — no key configured, credentials discovered by the provider
- * — fails every request with `Provider is not configured`.
+ * pi-ai per request. OAuth instead requires an explicitly configured persistent
+ * credential store plus an app-owned login surface. The generic provider
+ * directory cannot promise those composition facts, so it still withholds an
+ * OAuth-only catalog route until a profile explicitly declares that route.
  * @param provider - provider route key.
  * @returns whether the catalog provider takes an api key; false for a route
  *   pi-ai does not ship, which the caller answers for separately.

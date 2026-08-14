@@ -2,7 +2,7 @@
 
 [English](README.md) | 中文
 
-本目录维护 Apple 芯片版桌面发行包。它用原生 AppKit 窗口承载官方 DeepSeek Harness Web 应用，内置 Node 运行时与生产依赖闭包，并在启动时应用 [`openai.cordis.patch.yml`](openai.cordis.patch.yml)。App 名称是 **deepseek harness**，图标由仓库中的 DeepSeek 官方蓝色小鲸鱼与黑色圆角底图生成。
+本目录维护 Apple 芯片版桌面发行包。它用原生 AppKit 窗口承载官方 DeepSeek Harness Web 应用，内置 Node 运行时与生产依赖闭包，并在启动时应用 [`desktop.cordis.patch.yml`](desktop.cordis.patch.yml)。App 名称是 **deepseek harness**，图标使用白色圆角底图与 Harness 黑色小鲸鱼。
 
 ## 安装与启动
 
@@ -12,17 +12,17 @@
 
 App 把部署状态保存在 `~/Library/Application Support/DeepSeek Harness`，后端日志写入 `~/Library/Logs/DeepSeek Harness/backend.log`。可通过“deepseek harness → 显示后端日志”定位日志，通过“显示 → 重新载入”刷新 Web 界面。
 
-## OpenAI 与 Codex 认证
+## 默认 DeepSeek 与可选 OpenAI OAuth
 
-主 Agent 路由是使用 `openai/gpt-5.6-sol` 的 OpenAI Responses。它需要从启动环境中的 `OPENAI_API_KEY` 获取 OpenAI API 凭据，或由 Harness 凭据界面保存同名引用。
+发行包保留官方 DeepSeek 路由，并继续以 `deepseek-official/deepseek-v4-flash` 作为主 Agent 默认模型。桌面补丁只把 pi-ai catalog 中的 `openai-codex` 加为可选模型提供方；它不安装 Codex CLI、不挂载 Codex 子代理，也不替换 Harness Agent loop。
 
-App 另外内置官方 `@openai/codex` CLI，并挂载 Harness 的 `codex` 子代理提供方。选择“deepseek harness → Codex 账号登录…”即可运行官方 ChatGPT/Codex OAuth 流程；“Codex 登录状态”用于查看状态。登录后，模型可以通过 `subagent_codex` 工具委派任务，Codex 会经官方 app-server 协议运行。
+选择“deepseek harness → OpenAI OAuth 登录…”即可打开 pi-ai 的 ChatGPT 订阅 OAuth 流程。“OpenAI OAuth 状态”会检查凭据，并在需要时刷新；“退出 OpenAI OAuth”会删除凭据。Token 保存在 `~/Library/Application Support/DeepSeek Harness` 下仅限文件所有者读取的 JSON 文档中，刷新操作通过跨进程文件锁串行化。
 
-两条凭据链刻意保持分离：ChatGPT/Codex 账号登录只授权 Codex，不会被复制或改作主 Responses 模型的 API key。
+登录后，在 Harness 正常模型选择器中选择 `openai-codex` 下的 GPT 模型（例如 `gpt-5.6-sol`）即可。Harness 的 loop、本地工具、提示词、会话与 Agent 编排全部照旧，只切换所选 LLM 提供方。
 
-## 原生 Responses 行为
+## Pi OpenAI 行为
 
-桌面补丁开启了服务端响应存储、同路由 `previous_response_id` 续接、`reasoning.context: all_turns`、`reasoning.effort: high`、SSE 传输、长时 prompt cache，以及把 Harness session id 用作 prompt-cache key。若所选模型提供 `xhigh` 和 `max` 推理档位，底层模型 catalog 仍会将它们公开给选择器。
+可选路由使用 pi-ai 原生 `openai-codex-responses` 实现，启用 high 推理、长时 cache、自动传输选择、Harness session id、提供方回放元数据、OAuth 自动刷新，以及模型 catalog 提供的推理档位（有能力时包括 `xhigh` 与 `max`）。ChatGPT 的 Codex 后端要求 `store: false`；pi-ai 会通过它支持的传输方式处理续接，而不是套用 API-key Responses 路由的服务端存储开关。
 
 Harness 的本地 Shell、补丁编辑、Skills、MCP、工具搜索、程序化工具调用和多 Agent 编排仍由 Harness 自己提供，不会伪装成 OpenAI Hosted Shell 调用。这个桌面 profile 刻意不安装、也不启用 Claude Code。
 

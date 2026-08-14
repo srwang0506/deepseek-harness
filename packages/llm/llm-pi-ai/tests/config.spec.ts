@@ -64,3 +64,26 @@ describe('modality schema boundary', () => {
     expect(absent.providers['acme-gateway']?.defaultInput).toEqual(['text'])
   })
 })
+
+describe('OAuth credential store boundary', () => {
+  it('requires an absolute persistent store for an OAuth-only route', () => {
+    expect(() => assertServiceable({ providers: { 'openai-codex': {} } }))
+      .toThrow(/openai-codex.*requires credentialStorePath/)
+    expect(() => assertServiceable({
+      credentialStorePath: 'relative/auth.json',
+      providers: { 'openai-codex': {} },
+    })).toThrow(/non-empty absolute path/)
+    expect(() => assertServiceable({
+      credentialStorePath: '/tmp/pi-ai-auth.json',
+      providers: { 'openai-codex': {} },
+    })).not.toThrow()
+  })
+
+  it('keeps explicit API-key routes and dormant composition independent of the OAuth store', () => {
+    expect(() => assertServiceable({ providers: {} })).not.toThrow()
+    expect(() => assertServiceable({ providers: { 'openai-codex': { apiKeyEnv: 'CODEX_TOKEN' } } }))
+      .not.toThrow()
+    expect(() => assertServiceable({ credentialStorePath: '', providers: {} }))
+      .toThrow(/non-empty absolute path/)
+  })
+})

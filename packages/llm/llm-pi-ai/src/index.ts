@@ -61,6 +61,7 @@ import { assertUsableApiKey, LlmError } from '@deepseek-ai/dsh-llm'
 import type { AdapterRegistrationHandle, DirectoryRegistrationHandle, LlmConfigurableProvider } from '@deepseek-ai/dsh-llm'
 import { deepEqualJson, installSettingsSection, settingsNamespace } from '@deepseek-ai/dsh-settings'
 import { PiAiAdapter } from './adapter.ts'
+import { PiAiCredentialStore } from './credential-store.ts'
 import { catalogProviderIds, catalogProviderTakesApiKey } from './catalog.ts'
 import { assertServiceable, Config, resolveProfiles } from './config.ts'
 import type { ResolvedPiAiProviderProfile } from './config.ts'
@@ -68,6 +69,7 @@ import { discoverModels } from './discovery.ts'
 
 export { PiAiAdapter } from './adapter.ts'
 export type { PiAiAdapterOptions } from './adapter.ts'
+export { PiAiCredentialStore } from './credential-store.ts'
 export { Config } from './config.ts'
 export type {
   PiAiCompatProfile,
@@ -134,11 +136,11 @@ function directoryEntries(
       declared: !catalog.has(provider),
     })
   }
-  // A provider whose only native method is OAuth leaves this adapter nothing
-  // to authenticate with, so offering it would put a card on the settings page
-  // whose own posture — no key, credentials discovered by the provider — fails
-  // every request. Catalog *membership* is unaffected, so `declare` above still
-  // answers what pi-ai ships.
+  // An OAuth-only provider needs both a persistent store and an app-owned login
+  // surface. The generic directory cannot promise those composition facts, so
+  // it withholds the route until an explicit profile opts in. Catalog
+  // *membership* is unaffected, so `declare` above still answers what pi-ai
+  // ships.
   for (const provider of catalog) {
     if (catalogProviderTakesApiKey(provider)) declare(provider, provider)
   }
@@ -165,6 +167,7 @@ export function apply(ctx: Context, config: Config): void {
   const profiles = (): ReadonlyMap<string, ResolvedPiAiProviderProfile> => {
     const raw = current()
     if (raw === lastRaw && memoized !== undefined) return memoized
+    assertServiceable(raw)
     const next = resolveProfiles(raw.providers)
     lastRaw = raw
     memoized = next
@@ -200,6 +203,17 @@ export function apply(ctx: Context, config: Config): void {
   const adapter = new PiAiAdapter({
     profiles,
     resolveApiKey,
+    credentials: (() => {
+      let path: string | undefined
+      let store: PiAiCredentialStore | undefined
+      return () => {
+        const nextPath = current().credentialStorePath
+        if (nextPath === path) return store
+        path = nextPath
+        store = nextPath === undefined ? undefined : new PiAiCredentialStore(nextPath)
+        return store
+      }
+    })(),
     resolveAttachments: () => ctx.get('attachments'),
   })
   // The full installed catalog is configurable from the moment the plugin

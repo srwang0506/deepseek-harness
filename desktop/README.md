@@ -2,7 +2,7 @@
 
 English | [中文](README.zh.md)
 
-This directory owns the Apple-silicon desktop distribution. It wraps the official DeepSeek Harness web application in a native AppKit window, embeds its Node runtime and production dependency closure, and applies [`openai.cordis.patch.yml`](openai.cordis.patch.yml) at launch. The app is named **deepseek harness** and its icon is rendered from the repository's official blue DeepSeek whale on a black rounded square.
+This directory owns the Apple-silicon desktop distribution. It wraps the official DeepSeek Harness web application in a native AppKit window, embeds its Node runtime and production dependency closure, and applies [`desktop.cordis.patch.yml`](desktop.cordis.patch.yml) at launch. The app is named **deepseek harness** and its icon uses the Harness black whale on a white rounded-square background.
 
 ## Install and launch
 
@@ -12,17 +12,17 @@ The distribution is ad-hoc signed rather than notarized. On a machine that quara
 
 The app keeps deployment state under `~/Library/Application Support/DeepSeek Harness` and writes its backend log to `~/Library/Logs/DeepSeek Harness/backend.log`. Use **deepseek harness → Show backend log** to reveal it, and **View → Reload** to reload the web surface.
 
-## OpenAI and Codex authentication
+## DeepSeek default and optional OpenAI OAuth
 
-The primary agent route is OpenAI Responses with `openai/gpt-5.6-sol`. It requires an OpenAI API credential supplied as `OPENAI_API_KEY` in the launching environment or stored through the Harness credential surface under that reference.
+The shipped DeepSeek route and `deepseek-official/deepseek-v4-flash` remain the primary-agent default. The desktop patch adds the pi-ai catalog route `openai-codex` as an optional model provider; it does not install Codex CLI, mount a Codex subagent, or replace the Harness agent loop.
 
-The app separately embeds the official `@openai/codex` CLI and mounts the Harness `codex` subagent provider. Use **deepseek harness → Codex account login…** to run the official ChatGPT/Codex OAuth flow; **Codex login status** reports its state. Once signed in, the model can delegate through the `subagent_codex` tool and Codex runs through its official app-server protocol.
+Use **deepseek harness → OpenAI OAuth sign in…** to open pi-ai's ChatGPT subscription OAuth flow. **OpenAI OAuth status** checks and refreshes the stored credential when necessary; **Sign out of OpenAI OAuth** removes it. Tokens are stored in an owner-only JSON document below `~/Library/Application Support/DeepSeek Harness` and refreshes are serialized with a cross-process file lock.
 
-These are deliberately separate credential lanes: a ChatGPT/Codex account login authorizes Codex, but it is not copied or repurposed as the API key for the primary Responses model.
+After sign-in, choose an `openai-codex` GPT model such as `gpt-5.6-sol` in the normal Harness model selector. The same Harness loop, local tools, prompts, sessions, and agent orchestration continue to run; only the selected LLM provider changes.
 
-## Native Responses behavior
+## Pi OpenAI behavior
 
-The desktop patch enables server-side response storage, same-route `previous_response_id` continuation, `reasoning.context: all_turns`, `reasoning.effort: high`, SSE transport, long prompt-cache retention, and the Harness session id as the prompt-cache key. The underlying model catalog continues to expose supported `xhigh` and `max` reasoning levels when the selected model provides them.
+The optional route uses pi-ai's native `openai-codex-responses` implementation with high reasoning, long cache retention, automatic transport selection, the Harness session id, provider replay metadata, OAuth refresh, and the model catalog's supported reasoning levels (including `xhigh` and `max` where available). ChatGPT's Codex backend requires `store: false`; pi-ai handles continuation over its supported transport rather than applying the API-key Responses route's server-storage controls.
 
 Harness-local shell, patch editing, Skills, MCP, tool search, programmatic tool calls, and multi-agent orchestration remain Harness capabilities. They are not represented as OpenAI Hosted Shell calls. Claude Code is intentionally not installed or enabled by this desktop profile.
 

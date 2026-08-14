@@ -19,6 +19,7 @@ import z from '@deepseek-ai/schemastery'
 import { credentialRef } from '@deepseek-ai/dsh-credentials'
 import type { CredentialRef } from '@deepseek-ai/dsh-credentials'
 import { MAX_TIMER_DELAY_MS } from '@deepseek-ai/dsh-timeout'
+import { isAbsolute } from 'node:path'
 import { resolveRetryPolicy, RetryPolicySchema } from '@deepseek-ai/dsh-llm'
 import type { ResolvedRetryPolicy, RetryPolicyConfig } from '@deepseek-ai/dsh-llm'
 import { MODALITIES, resolveRouteModels, SUPPORTED_THINKING_FORMATS, THINKING_LEVELS } from './catalog.ts'
@@ -183,6 +184,8 @@ export interface ResolvedPiAiProviderProfile
 
 /** Plugin configuration: the provider routes this instance owns. */
 export interface Config {
+  /** Absolute path of the owner-only pi-ai OAuth credential document. */
+  credentialStorePath?: string
   /**
    * pi-ai provider routes, keyed by provider. An empty (or omitted) dict is
    * the dormant settings-driven posture: the adapter mounts with no routes
@@ -271,6 +274,7 @@ const profile = z.object({
 
 /** Runtime schema for {@link Config}. */
 export const Config: z<Config> = z.object({
+  credentialStorePath: z.string(),
   providers: z.dict(profile).default({}),
 })
 
@@ -287,7 +291,22 @@ export const Config: z<Config> = z.object({
  * @throws Error naming the route and model that cannot be served.
  */
 export function assertServiceable(config: Config): void {
-  resolveProfiles(config.providers)
+  const profiles = resolveProfiles(config.providers)
+  if (config.credentialStorePath !== undefined) {
+    if (config.credentialStorePath.length === 0 || !isAbsolute(config.credentialStorePath)) {
+      throw new Error('llm-pi-ai: credentialStorePath must be a non-empty absolute path')
+    }
+  }
+  for (const profile of profiles.values()) {
+    if (profile.apiKeyEnv === undefined
+      && profile.piProvider.auth.apiKey === undefined
+      && profile.piProvider.auth.oauth !== undefined
+      && config.credentialStorePath === undefined) {
+      throw new Error(
+        `llm-pi-ai: provider "${profile.provider}" authenticates through OAuth and requires credentialStorePath`,
+      )
+    }
+  }
 }
 
 /** Reject removed pre-release profile fields and name their replacements. */

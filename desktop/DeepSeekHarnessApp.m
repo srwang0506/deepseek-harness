@@ -60,19 +60,25 @@ static NSString *const DSHAppName = @"deepseek harness";
   return [[self runtimeRoot] URLByAppendingPathComponent:@"node_modules/@deepseek-ai/dsh/lib/bin.js"];
 }
 
-- (NSURL *)codexEntrypoint {
-  return [[self runtimeRoot] URLByAppendingPathComponent:@"node_modules/@openai/codex/bin/codex.js"];
+- (NSURL *)openAIOAuthEntrypoint {
+  return [[self runtimeRoot] URLByAppendingPathComponent:@"openai-oauth.mjs"];
 }
 
 - (NSURL *)applicationSupportDirectory:(NSError **)error {
   NSURL *library = [NSFileManager.defaultManager URLsForDirectory:NSApplicationSupportDirectory
                                                          inDomains:NSUserDomainMask].firstObject;
   NSURL *directory = [library URLByAppendingPathComponent:@"DeepSeek Harness" isDirectory:YES];
+  NSDictionary<NSFileAttributeKey, id> *attributes = @{NSFilePosixPermissions: @0700};
   if (![NSFileManager.defaultManager createDirectoryAtURL:directory
                               withIntermediateDirectories:YES
-                                               attributes:nil
+                                               attributes:attributes
                                                     error:error]) return nil;
+  if (![NSFileManager.defaultManager setAttributes:attributes ofItemAtPath:directory.path error:error]) return nil;
   return directory;
+}
+
+- (NSURL *)openAICredentialFile:(NSURL *)dshHome {
+  return [dshHome URLByAppendingPathComponent:@"pi-ai-auth.json"];
 }
 
 - (NSURL *)logFile:(NSError **)error {
@@ -159,8 +165,9 @@ static NSString *const DSHAppName = @"deepseek harness";
                                               action:@selector(orderFrontStandardAboutPanel:)
                                        keyEquivalent:@""]];
   [appMenu addItem:NSMenuItem.separatorItem];
-  [appMenu addItem:[self menuItem:@"Codex 账号登录…" action:@selector(signInCodex:) key:@"l"]];
-  [appMenu addItem:[self menuItem:@"Codex 登录状态" action:@selector(codexStatus:) key:@""]];
+  [appMenu addItem:[self menuItem:@"OpenAI OAuth 登录…" action:@selector(signInOpenAI:) key:@"l"]];
+  [appMenu addItem:[self menuItem:@"OpenAI OAuth 状态" action:@selector(openAIStatus:) key:@""]];
+  [appMenu addItem:[self menuItem:@"退出 OpenAI OAuth" action:@selector(signOutOpenAI:) key:@""]];
   [appMenu addItem:NSMenuItem.separatorItem];
   [appMenu addItem:[self menuItem:@"显示后端日志" action:@selector(showLogs:) key:@""]];
   [appMenu addItem:NSMenuItem.separatorItem];
@@ -177,49 +184,9 @@ static NSString *const DSHAppName = @"deepseek harness";
   NSApp.mainMenu = main;
 }
 
-- (BOOL)ensureCodexProfileFallback:(NSURL *)dshHome error:(NSError **)error {
-  NSFileManager *manager = NSFileManager.defaultManager;
-  NSURL *source = [[self runtimeRoot]
-    URLByAppendingPathComponent:@"node_modules/@deepseek-ai/dsh-subagent-codex" isDirectory:YES];
-  BOOL sourceIsDirectory = NO;
-  if (![manager fileExistsAtPath:source.path isDirectory:&sourceIsDirectory] || !sourceIsDirectory) {
-    if (error) *error = [NSError errorWithDomain:NSCocoaErrorDomain
-                                             code:NSFileNoSuchFileError
-                                         userInfo:@{NSLocalizedDescriptionKey: @"App 内缺少 Codex 子代理运行时"}];
-    return NO;
-  }
-
-  NSURL *scope = [dshHome URLByAppendingPathComponent:@"profiles/node_modules/@deepseek-ai" isDirectory:YES];
-  if (![manager createDirectoryAtURL:scope withIntermediateDirectories:YES attributes:nil error:error]) return NO;
-  NSURL *link = [scope URLByAppendingPathComponent:@"dsh-subagent-codex"];
-  NSError *attributesError = nil;
-  NSDictionary<NSFileAttributeKey, id> *attributes = [manager attributesOfItemAtPath:link.path
-                                                                                error:&attributesError];
-  if (attributes) {
-    if (![attributes[NSFileType] isEqual:NSFileTypeSymbolicLink]) {
-      if (error) *error = [NSError errorWithDomain:NSCocoaErrorDomain
-                                               code:NSFileWriteFileExistsError
-                                           userInfo:@{NSLocalizedDescriptionKey:
-                                             @"Codex Profile fallback 已存在且不是 App 可维护的链接"}];
-      return NO;
-    }
-    NSString *destination = [manager destinationOfSymbolicLinkAtPath:link.path error:error];
-    if (!destination) return NO;
-    if ([destination isEqualToString:source.path]) return YES;
-    if (![manager removeItemAtURL:link error:error]) return NO;
-  } else if (![attributesError.domain isEqualToString:NSCocoaErrorDomain]
-             || (attributesError.code != NSFileNoSuchFileError
-                 && attributesError.code != NSFileReadNoSuchFileError)) {
-    if (error) *error = attributesError;
-    return NO;
-  }
-  return [manager createSymbolicLinkAtURL:link withDestinationURL:source error:error];
-}
-
 - (void)startBackend {
   NSError *error = nil;
   NSURL *dshHome = [self applicationSupportDirectory:&error];
-  if (dshHome && ![self ensureCodexProfileFallback:dshHome error:&error]) dshHome = nil;
   NSURL *logURL = dshHome ? [self logFile:&error] : nil;
   if (!dshHome || !logURL) {
     [self showFailure:[NSString stringWithFormat:@"无法准备 Harness 数据目录：%@", error.localizedDescription]];
@@ -242,7 +209,7 @@ static NSString *const DSHAppName = @"deepseek harness";
   task.arguments = @[
     [self dshEntrypoint].path,
     @"web", @"--patch",
-    [[[self resources] URLByAppendingPathComponent:@"config/openai.cordis.patch.yml"] path],
+    [[[self resources] URLByAppendingPathComponent:@"config/desktop.cordis.patch.yml"] path],
     @"--port", @"0"
   ];
 
@@ -317,17 +284,21 @@ static NSString *const DSHAppName = @"deepseek harness";
   if (file) [NSWorkspace.sharedWorkspace activateFileViewerSelectingURLs:@[file]];
 }
 
-- (void)signInCodex:(id)sender {
-  [self runCodex:@[@"login"] title:@"Codex 账号登录"];
+- (void)signInOpenAI:(id)sender {
+  [self runOpenAIOAuthCommand:@"login" title:@"OpenAI OAuth 登录"];
 }
 
-- (void)codexStatus:(id)sender {
-  [self runCodex:@[@"login", @"status"] title:@"Codex 登录状态"];
+- (void)openAIStatus:(id)sender {
+  [self runOpenAIOAuthCommand:@"status" title:@"OpenAI OAuth 状态"];
 }
 
-- (void)runCodex:(NSArray<NSString *> *)arguments title:(NSString *)title {
+- (void)signOutOpenAI:(id)sender {
+  [self runOpenAIOAuthCommand:@"logout" title:@"退出 OpenAI OAuth"];
+}
+
+- (void)runOpenAIOAuthCommand:(NSString *)command title:(NSString *)title {
   if (self.accountTask) {
-    [self showFailure:@"已有 Codex 账号操作正在进行。"];
+    [self showFailure:@"已有 OpenAI OAuth 操作正在进行。"];
     return;
   }
   NSError *error = nil;
@@ -338,7 +309,11 @@ static NSString *const DSHAppName = @"deepseek harness";
   }
   NSTask *task = [NSTask new];
   task.executableURL = [self bundledNode];
-  task.arguments = [@[[self codexEntrypoint].path] arrayByAddingObjectsFromArray:arguments];
+  task.arguments = @[
+    [self openAIOAuthEntrypoint].path,
+    command,
+    [self openAICredentialFile:dshHome].path
+  ];
   task.currentDirectoryURL = NSFileManager.defaultManager.homeDirectoryForCurrentUser;
   task.environment = [self processEnvironment:dshHome];
   NSPipe *output = [NSPipe pipe];
@@ -360,7 +335,7 @@ static NSString *const DSHAppName = @"deepseek harness";
   self.accountTask = task;
   if (![task launchAndReturnError:&error]) {
     self.accountTask = nil;
-    [self showFailure:[NSString stringWithFormat:@"无法启动 Codex：%@", error.localizedDescription]];
+    [self showFailure:[NSString stringWithFormat:@"无法启动 OpenAI OAuth：%@", error.localizedDescription]];
   }
 }
 
@@ -386,7 +361,7 @@ static NSString *const DSHAppName = @"deepseek harness";
     "font:15px -apple-system,BlinkMacSystemFont,sans-serif}main{height:100%;display:grid;"
     "place-items:center;text-align:center}.fish{font-size:54px;color:#4d6bfe;margin-bottom:18px}"
     ".sub{color:#7d879e;margin-top:9px}</style><main><div><div class='fish'>◖°⌁°◗</div>"
-    "<div>正在启动 deepseek harness…</div><div class='sub'>OpenAI Responses · GPT-5.6 Sol</div>"
+    "<div>正在启动 deepseek harness…</div><div class='sub'>默认 DeepSeek · 可选 OpenAI OAuth</div>"
     "</div></main></html>";
 }
 

@@ -60,9 +60,9 @@ async function buildIcon(iconset: string, destination: string): Promise<void> {
   if (path === undefined) throw new Error('official DeepSeek fish path is missing from favicon.svg')
   const svg = Buffer.from(`
     <svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
-      <rect width="1024" height="1024" rx="224" fill="#05070A"/>
+      <rect width="1024" height="1024" rx="224" fill="#FFFFFF"/>
       <g transform="translate(128 128) scale(15.36)">
-        <path d="${path}" fill="#4D6BFE"/>
+        <path d="${path}" fill="#111111"/>
       </g>
     </svg>
   `)
@@ -206,9 +206,10 @@ async function main(): Promise<void> {
   await copyFile(process.execPath, join(runtime, 'node'))
   await chmod(join(runtime, 'node'), 0o755)
   await copyFile(
-    join(repoRoot, 'desktop/openai.cordis.patch.yml'),
-    join(resources, 'config/openai.cordis.patch.yml'),
+    join(repoRoot, 'desktop/desktop.cordis.patch.yml'),
+    join(resources, 'config/desktop.cordis.patch.yml'),
   )
+  await copyFile(join(repoRoot, 'desktop/openai-oauth.mjs'), join(deployedDsh, 'openai-oauth.mjs'))
 
   const executable = join(macOS, 'deepseek-harness')
   await run('xcrun', [

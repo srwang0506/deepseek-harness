@@ -1,4 +1,4 @@
-# Agent Note: 带 Codex 委派的 OpenAI Responses 桌面发行版
+# Agent Note: OpenAI Responses 控制与可移动 macOS 打包
 
 Status: implemented
 
@@ -6,34 +6,32 @@ Status: implemented
 
 ## 问题
 
-以 OpenAI 为主的 macOS 部署不能只修改默认模型名称。主循环必须保留第一方 Responses 的续接与推理控制，可选的 Codex 账号路径必须使用官方登录和 app-server 生命周期，最终交付的应用也必须携带闭合的生产运行时，而不能依赖源码 checkout。若把产品集成重新加入每个 `dsh` 安装，会违背[生产依赖边界](../simplification/2026-08-12-production-dsh-excludes-product-subagent-providers.md)；若把 Codex OAuth 凭据当作通用 OpenAI API key，又会跨越官方客户端刻意分离的认证边界。
+使用 OpenAI API key 的部署不能只修改模型名称：第一方 Responses 续接与推理控制拥有独立的持久历史和隐私语义。桌面交付也需要闭合的生产运行时，而不能暗中依赖源码 checkout。产品专用集成不应回到每个通用 `dsh` 安装中，账号 OAuth 凭据也不能被悄悄当作 OpenAI API key。
+
+本记录最初涉及的桌面默认模型、账号 OAuth、可选 GPT 路由、委派姿态与图标部分，已由 [Pi OAuth GPT 桌面决策](2026-08-14-pi-oauth-gpt-desktop.md)取代。本记录继续负责通用 Responses 控制与可移动 macOS 打包闭包。
 
 ## 决策
 
-仓库提供 Apple 芯片桌面构建路径。原生 AppKit 启动器内置 Node、构建后的 Harness Web 应用、生产依赖闭包、官方 Codex CLI 和以 OpenAI 为主的 Cordis 补丁。它在操作系统分配的端口上启动私有 loopback Web 服务，让实际进程 cwd 留在 APFS，同时把 `/Volumes/sirui/deepseek-harness` 统一配置为 host、文件系统和 sandbox 服务的首选逻辑工作区；部署状态和日志保存在用户 Library 中，App 退出时会终止子服务。最终打包为经过 ad-hoc 签名的 `deepseek harness.app`，以及适合存放在 exFAT 上的无元数据 ZIP。
+对使用 `openai-responses` 的 profile，`openAIResponses.store` 开启服务端响应存储。`previousResponseId` 要求开启存储，并且只从提供方路由、模型、API 与响应 id 全部匹配的最近持久化 assistant 响应续接。请求发送 `previous_response_id` 和该响应之后的消息，系统提示仍单独提供。外部或不兼容历史会发送完整持久对话。`reasoningContext: all_turns` 增加 `reasoning.context`；推理档位、按 session 设置的 prompt cache、cache retention、传输、工具与 replay metadata 继续由各自组件拥有。这些字段不作用于 Chat Completions，也不作用于 pi-ai 的 ChatGPT OAuth 后端。
 
-`apps/desktop-runtime/package.json` 是仅用于部署的清单。它包含 Codex 提供方及其运行时闭包，但不改变通用 `@deepseek-ai/dsh` 应用的依赖图。启动时，App 会维护一条从桌面 DSH home 指向内置 Codex 提供方的 profile 本地符号链接，让普通 Profile 解析能够找到这项显式安装的集成。若该路径已经存在且不是符号链接，App 会保留用户状态，并以可归因错误终止启动，而不是替换它。这个部署专用 opt-in 是对通用生产排除决策的补充，并未取代它。
+仓库还提供 Apple 芯片桌面构建路径。原生 AppKit 启动器内置 Node、构建后的 Harness Web 应用与生产依赖闭包；它在操作系统分配的端口上启动私有 loopback 服务，让实际进程 cwd 留在 APFS，同时把 `/Volumes/sirui/deepseek-harness` 设为首选逻辑工作区；部署状态与日志保存在用户 Library 中，退出时终止子服务，并产出经过 ad-hoc 签名的 `deepseek harness.app` 和适合存放在 exFAT 上的无元数据 ZIP。
 
-主 Agent 使用 pi-ai 的 OpenAI 路由，并要求 `OPENAI_API_KEY` 凭据引用。对于 `openai-responses` 模型，`openAIResponses.store` 开启服务端存储；`previousResponseId` 要求开启存储，而且只从提供方路由、模型、API 和响应 id 都匹配的最近一条持久化 assistant 响应续接。请求随后发送 `previous_response_id`，并且只发送该 assistant 响应之后的消息；系统提示仍单独提供。若出现外部或不兼容的 assistant 响应，则发送完整持久化历史。`reasoningContext: all_turns` 增加 `reasoning.context`；已有的推理档位、按 session 设置的 prompt cache、cache retention、传输、工具和 replay metadata 仍由各自现有组件维护。
-
-Codex 是一个可选前台子代理，以 `subagent_codex` 暴露，并遵循既有的 [Codex 提供方契约](2026-08-04-claude-code-and-codex-subagent-backends.md)。App 菜单调用内置官方 CLI 完成登录和状态查询，提供方则与官方 Codex app-server 通信。Harness 不会为主 Responses 路由读取、复制、转换或刷新 OAuth token。本桌面运行时和补丁不包含 Claude Code。
-
-App 图标在构建时由仓库中的 DeepSeek 官方 favicon 路径生成，使用官方蓝色和黑色圆角方形背景。构建器会在签名前把包管理器链接实体化为文件，使 App 移出 checkout 后仍可运行。
+`apps/desktop-runtime/package.json` 仍是仅用于部署的清单。它承载运行时闭包而不改变通用 `@deepseek-ai/dsh` 应用依赖图。构建器在签名前把包管理器链接实体化为文件，使 App 可移出 checkout。当前默认模型、OAuth 与图标行为由取代本记录的桌面 Note 定义。
 
 ## 验证
 
-适配器测试固定了第一方 payload 字段、同路由历史边界、cache metadata、非目标协议隔离，以及 `previousResponseId`/`store` 校验规则。运行时闭包校验器证明桌面清单可达的每个 workspace 依赖都已声明。生产构建、严格代码签名验证、property list 校验、零符号链接扫描、内置 CLI 烟测和真实 loopback Web 启动共同覆盖打包产物。
+适配器测试固定第一方 payload 字段、同路由历史边界、cache metadata、非目标协议隔离，以及 `previousResponseId`/`store` 校验规则。运行时闭包验证覆盖桌面清单可达的全部 workspace 依赖。生产构建、原生编译、严格代码签名验证、property list 校验、零符号链接扫描与真实 loopback 启动共同覆盖打包产物。
 
 ## 考虑过的替代方案
 
-**把 Codex 和 Claude Code 恢复到通用生产应用。** 这会让每个 CLI 安装都下载可选产品代码，并推翻生产依赖决策。独立桌面清单只为本发行版承担该成本，而且只包含 Codex。
+**把产品集成恢复到通用生产应用。** 这会让每个 CLI 安装都下载可选产品代码，并推翻生产依赖边界。仅部署清单让发行成本保持局部。
 
-**把 Codex OAuth 登录作为主 OpenAI 模型凭据。** Codex 客户端拥有登录、刷新和 app-server 认证；Responses API key 路由拥有另一套契约。复用 token 文件会让 Harness 依赖私有凭据存储，并可能在 token 不再刷新时悄然失效，因此两条路径保持显式分离。
+**把账号 OAuth 当作 API-key 凭据。** 两者的认证契约、端点、刷新所有者与服务端存储能力不同。复用私有 token 文件会让 Harness 绑定另一个客户端的存储，而且可能在刷新行为变化后失效。
 
-**让所有 GPT 请求都经过 Codex。** 这只会提供委派语义，无法让主 Harness 循环直接拥有模型选择、持久化历史、Responses 续接、prompt-cache key 和原生工具循环。Codex 保持为直接 OpenAI 适配器旁边可调用的专用子代理。
+**为兼容性使用 Chat Completions。** 它无法携带所选第一方响应游标与推理上下文契约。适配器只对 `openai-responses` descriptor 应用这些控制。
 
-**为兼容性使用 Chat Completions。** 它无法携带本部署选定的第一方响应游标和 reasoning context 契约。适配器只在 catalog 模型解析为 `openai-responses` 时应用新控制，其他协议保持不变。
+**直接从 exFAT 运行 App。** AppleDouble 元数据可能使签名 bundle 失效。安装后的 App 留在 APFS，源码 checkout 与 ZIP 可以存放在 `/Volumes/sirui`。
 
 ## 后果
 
-桌面产物较大，因为它内置 Node、完整生产 Harness 闭包、Web 资源和 Codex 平台二进制；相应地，它不要求全局安装 Node 或 pnpm，并且可以独立于 checkout 移动。即使用户拥有 ChatGPT/Codex 订阅，主模型仍需要可计费的 OpenAI API 访问。启用游标续接后，服务端存储会成为已配置的 OpenAI 隐私姿态的一部分。Harness 的本地 Shell、补丁编辑、Skills、MCP、工具搜索、程序化工具调用和多 Agent 编排仍是 Harness 原生能力，而不是 OpenAI Hosted Shell 调用。
+使用 API key 的 OpenAI 路由可以在明确隐私姿态下选择提供方侧响应存储与紧凑游标续接。桌面产物较大，因为它内置 Node、Web 资源与生产 Harness 闭包；相应地，它无需全局 Node 或 pnpm，也可独立于 checkout 移动。打包路径不决定默认模型，也不授权跨提供方契约复制凭据。
