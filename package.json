@@ -24,6 +24,7 @@
     "build:web": "pnpm --filter @deepseek-ai/dsh-web-frontend run build",
     "desktop:build": "tsx scripts/build-macos-app.ts",
     "server:build": "tsx scripts/build-linux-cli.ts",
+    "windows:build": "tsx scripts/build-windows-cli.ts",
     "clean": "tsx scripts/clean.ts",
     "change-scope": "tsx scripts/change-scope.ts",
     "typecheck": "npm run build:lib:host && npm run typecheck:contracts-ready",

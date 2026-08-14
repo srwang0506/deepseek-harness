@@ -12,7 +12,7 @@ DeepSeek Harness is currently in _developer preview_ and is iterating rapidly. *
 
 ## Native releases
 
-This fork publishes a macOS App, a macOS CLI, and Linux server CLIs. Choose one installation scenario; the App and CLI are not installed together. Every installer verifies the release checksum and backs up an existing target before replacement.
+This fork publishes a macOS App, a macOS CLI, Linux server CLIs, and Windows CLIs. Choose one installation scenario; the App and CLI are not installed together. Every installer verifies the release checksum and backs up an existing target before replacement.
 
 ### macOS desktop App
 
@@ -24,7 +24,7 @@ curl -fsSL https://github.com/srwang0506/deepseek-harness/releases/latest/downlo
 
 ### macOS CLI
 
-Apple silicon only; installs `deepseek-harness` without the desktop App:
+Apple silicon only; installs `dsh` without the desktop App:
 
 ```sh
 curl -fsSL https://github.com/srwang0506/deepseek-harness/releases/latest/download/install.sh | sh -s -- macos-cli
@@ -42,7 +42,13 @@ curl -fsSL https://github.com/srwang0506/deepseek-harness/releases/latest/downlo
 curl -fsSL https://github.com/srwang0506/deepseek-harness/releases/latest/download/install.sh | sh -s -- linux-arm64
 ```
 
-The CLI is linked as `~/.local/bin/deepseek-harness`. DeepSeek remains the default model; GPT models are optional through browser OAuth, device-code OAuth, or an OpenAI Platform API key. See the [native distribution guide](desktop/README.md) for paths, server login, SSH tunneling, builds, and security notes.
+### Windows
+
+```powershell
+irm https://github.com/srwang0506/deepseek-harness/releases/latest/download/install.ps1 | iex windows-x64
+```
+
+The CLI is linked as `~/.local/bin/dsh` on macOS and Linux, and `%LOCALAPPDATA%\DeepSeek Harness\bin\dsh.cmd` on Windows. DeepSeek remains the default model; GPT models are optional through browser OAuth, device-code OAuth, or an OpenAI Platform API key. See the [native distribution guide](desktop/README.md) for paths, server login, SSH tunneling, builds, and security notes.
 
 ## Run
 

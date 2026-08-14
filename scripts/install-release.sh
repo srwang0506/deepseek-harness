@@ -73,13 +73,32 @@ install_cli() {
   backup_existing "$cli_install_root"
   mv "$cli_extracted" "$cli_install_root"
 
-  installed_launcher="$cli_bin_dir/deepseek-harness"
+  installed_launcher="$cli_bin_dir/dsh"
   backup_existing "$installed_launcher"
-  ln -s "$cli_install_root/bin/deepseek-harness" "$installed_launcher"
+  ln -s "$cli_install_root/bin/dsh" "$installed_launcher"
 
-  legacy_launcher="$cli_bin_dir/deeepseek-harness"
+  legacy_launcher="$cli_bin_dir/deepseek-harness"
   if [ -L "$legacy_launcher" ]; then backup_existing "$legacy_launcher"; fi
+  legacy_typo_launcher="$cli_bin_dir/deeepseek-harness"
+  if [ -L "$legacy_typo_launcher" ]; then backup_existing "$legacy_typo_launcher"; fi
   echo "Installed CLI: $installed_launcher"
+}
+
+dsh_home() {
+  if [ "$system" = Darwin ]; then
+    printf '%s' "${DSH_HOME:-$HOME/Library/Application Support/DeepSeek Harness}"
+  else
+    printf '%s' "${DSH_HOME:-${XDG_DATA_HOME:-$HOME/.local/share}/deepseek-harness}"
+  fi
+}
+
+install_home_patch() {
+  home_patch_source=$1
+  home_patch_target="$(dsh_home)/cordis.patch.yml"
+  mkdir -p "$(dsh_home)"
+  backup_existing "$home_patch_target"
+  cp "$home_patch_source" "$home_patch_target"
+  echo "Installed home patch: $home_patch_target"
 }
 
 install_target=${1:-}
@@ -153,6 +172,7 @@ case "$install_target" in
     legacy_cli="$HOME/Library/Application Support/DeeepSeek Harness CLI"
     if [ "$legacy_cli" != "$cli_root" ] && [ -e "$legacy_cli" ]; then backup_existing "$legacy_cli"; fi
     install_cli "$temporary/cli/DeepSeek Harness CLI" "$cli_root"
+    install_home_patch "$cli_root/config/cordis.patch.yml"
     ;;
   linux-x64 | linux-arm64)
     command -v tar >/dev/null 2>&1 || fail "$install_target requires tar."
@@ -161,13 +181,14 @@ case "$install_target" in
     data_home=${XDG_DATA_HOME:-$HOME/.local/share}
     cli_root=${DEEPSEEK_HARNESS_INSTALL_ROOT:-$data_home/deepseek-harness}
     install_cli "$temporary/cli/DeepSeek Harness CLI" "$cli_root"
+    install_home_patch "$cli_root/config/cordis.patch.yml"
     ;;
 esac
 
 echo "DeepSeek Harness $install_target installation complete."
 if [ "$install_target" != macos-app ]; then
   "$installed_launcher" --help >/dev/null
-  if ! command -v deepseek-harness >/dev/null 2>&1; then
-    echo 'Add $HOME/.local/bin to PATH, then run: deepseek-harness --help'
+  if ! command -v dsh >/dev/null 2>&1; then
+    echo 'Add $HOME/.local/bin to PATH, then run: dsh --help'
   fi
 fi

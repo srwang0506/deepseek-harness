@@ -74,6 +74,10 @@ dsh web --help
 
 `DSH_TOOLS_MODE` 为进程选择 `native`、`code` 或 `both`；其他值会导致启动失败。随附的 `minimal` agent preset 会保留该部署的呈现方式，将完整系统提示词固定为 `You are a helpful software engineer assistant.`，并且仅组合持久 `bash` 和 `str_replace_editor`。创建 Web 会话时请选择极简模式；该 agent 不包含任何其他提示词段落或面向模型的插件，而共享的浏览器、workspace、持久化、沙箱与权限宿主保持不变。
 
+## OpenAI GPT 登录与模型选择
+
+可选的 OpenAI GPT 提供方通过 `dsh login` 登录（浏览器 OAuth、设备码 OAuth 或 OpenAI Platform API key），通过 `dsh status` 查看状态，通过 `dsh logout` 退出。凭据保存在 `$DSH_HOME/pi-ai-auth.json`，与 `llm-pi-ai` 提供方路由读取的同一个 owner-only 文档一致。`dsh model` 显示或选择默认 agent 模型：`dsh model`（或 `model status`）打印当前选择，`dsh model deepseek` 选择 DeepSeek V4 Flash，`dsh model gpt [model] [effort]` 选择 OpenAI GPT 路由。stdin 为终端时，不带方式调用 `dsh login` 会提示选择；否则必须显式指定方式。
+
 ## 共享部署行为
 
 基础组合包挂载原生 DeepSeek 适配器、settings 与凭据提供方、稳定的 `web_search` 和已禁用的会话遥测。提供方凭据依次从继承环境、`$DSH_HOME/.credentials.yaml`、调用目录的 `.env` 和 `$DSH_HOME/.env` 解析；受管文档从不物化进 `process.env`，而两个 `.env` 文件都是普通启动环境层。搜索使用 `DEEPSEEK_API_KEY` 并接受 `DEEPSEEK_SEARCH_BASE_URL`；只有 patch 层插入提供方并启用 `web_fetch` 后，该工具才可用。

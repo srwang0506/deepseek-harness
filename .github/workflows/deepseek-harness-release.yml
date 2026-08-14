@@ -34,6 +34,10 @@ jobs:
             runner: ubuntu-24.04-arm
             system: linux
             architecture: arm64
+          - id: windows-x64
+            runner: windows-2025
+            system: windows
+            architecture: x64
     steps:
       - uses: actions/checkout@v6
 
@@ -46,7 +50,15 @@ jobs:
           node-version: 24
           cache: pnpm
 
+      - name: Enable Developer Mode (symlink support)
+        if: matrix.system == 'windows'
+        shell: pwsh
+        run: >-
+          reg add "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\AppModelUnlock"
+          /t REG_DWORD /f /v "AllowDevelopmentWithoutDevLicense" /d "1"
+
       - name: Verify native runner
+        shell: bash
         env:
           EXPECTED_ARCHITECTURE: ${{ matrix.architecture }}
         run: test "$(node -p process.arch)" = "$EXPECTED_ARCHITECTURE"
@@ -62,6 +74,10 @@ jobs:
         if: matrix.system == 'linux'
         run: pnpm run server:build -- --output dist
 
+      - name: Build Windows CLI distribution
+        if: matrix.system == 'windows'
+        run: pnpm run windows:build -- --output dist
+
       - name: Smoke release assets
         shell: bash
         run: |
@@ -69,11 +85,13 @@ jobs:
           if [[ "${{ matrix.system }}" == macos ]]; then
             unzip -tq dist/deepseek-harness-macos-arm64.zip
             unzip -tq dist/deepseek-harness-cli-macos-arm64.zip
-            dist/'DeepSeek Harness CLI'/bin/deepseek-harness --help >/dev/null
+            dist/'DeepSeek Harness CLI'/bin/dsh --help >/dev/null
+          elif [[ "${{ matrix.system }}" == windows ]]; then
+            powershell -NoProfile -Command "& 'dist/DeepSeek Harness CLI/bin/dsh.cmd' --help" >/dev/null
           else
             tar -tzf "dist/deepseek-harness-linux-${{ matrix.architecture }}.tar.gz" \
-              'DeepSeek Harness CLI/bin/deepseek-harness' >/dev/null
-            dist/'DeepSeek Harness CLI'/bin/deepseek-harness --help >/dev/null
+              'DeepSeek Harness CLI/bin/dsh' >/dev/null
+            dist/'DeepSeek Harness CLI'/bin/dsh --help >/dev/null
           fi
 
       - uses: actions/upload-artifact@v7
@@ -106,6 +124,7 @@ jobs:
         run: |
           set -euo pipefail
           cp scripts/install-release.sh dist/install.sh
+          cp scripts/install-release.ps1 dist/install.ps1
           chmod 755 dist/install.sh
           expected=$(mktemp)
           actual=$(mktemp)
@@ -114,6 +133,8 @@ jobs:
             deepseek-harness-linux-arm64.tar.gz \
             deepseek-harness-linux-x64.tar.gz \
             deepseek-harness-macos-arm64.zip \
+            deepseek-harness-windows-x64.zip \
+            install.ps1 \
             install.sh > "$expected"
           find dist -maxdepth 1 -type f -printf '%f\n' | sort > "$actual"
           diff -u "$expected" "$actual"

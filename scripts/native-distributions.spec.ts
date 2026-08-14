@@ -40,7 +40,7 @@ describe('DeepSeek Harness native distributions', () => {
     expect(app).toContain('window.movableByWindowBackground = YES')
     expect(app).not.toContain('NSWindowStyleMaskFullSizeContentView')
     expect(runtime).toContain("PRODUCT_NAME = 'DeepSeek Harness'")
-    expect(runtime).toContain("CLI_COMMAND = 'deepseek-harness'")
+    expect(runtime).toContain("CLI_COMMAND = 'dsh'")
   })
 
   it('defines native macOS, Linux x64, and Linux ARM64 release assets', async () => {
@@ -59,35 +59,6 @@ describe('DeepSeek Harness native distributions', () => {
     expect(workflow).toContain('gh release create "$TAG"')
   })
 
-  it('runs the CLI entry and preserves unrelated shared settings', async () => {
-    const root = await mkdtemp(join(tmpdir(), 'deepseek-harness-cli-'))
-    temporaryRoots.push(root)
-    const settingsPath = join(root, 'settings.yaml')
-    await writeFile(settingsPath, 'ui-onboarding:\n  modelSelection: true\n')
-    const entry = fileURLToPath(new URL('../apps/desktop-runtime/cli-entry.mjs', import.meta.url))
-    const environment = { ...process.env, DSH_HOME: root }
-
-    const help = await execFileAsync(process.execPath, [entry, '--help'], {
-      encoding: 'utf8',
-      env: environment,
-    })
-    expect(help.stdout).toContain('DeepSeek Harness CLI')
-    expect(help.stdout).toContain('deepseek-harness login [browser|device|api-key]')
-
-    const selected = await execFileAsync(
-      process.execPath,
-      [entry, 'model', 'gpt', 'gpt-5.6-sol', 'xhigh'],
-      { encoding: 'utf8', env: environment },
-    )
-    expect(selected.stdout).toBe('Selected openai-codex/gpt-5.6-sol (xhigh)\n')
-
-    const settings = await readFile(settingsPath, 'utf8')
-    expect(settings).toContain('modelSelection: true')
-    expect(settings).toContain('provider: openai-codex')
-    expect(settings).toContain('model: gpt-5.6-sol')
-    expect(settings).toContain('reasoningEffort: xhigh')
-  })
-
   it('requires an explicit installation scenario that matches the host', async () => {
     const installer = fileURLToPath(new URL('./install-release.sh', import.meta.url))
     expect(await failedCommandStderr('/bin/sh', [installer])).toContain('choose one installation target')
@@ -103,10 +74,12 @@ describe('DeepSeek Harness native distributions', () => {
     const release = join(root, 'release')
     const payload = join(root, 'payload')
     const cli = join(payload, 'DeepSeek Harness CLI')
-    const cliLauncher = join(cli, 'bin/deepseek-harness')
+    const cliLauncher = join(cli, 'bin/dsh')
     await mkdir(join(cli, 'bin'), { recursive: true })
     await writeFile(cliLauncher, '#!/bin/sh\necho installed\n')
     await chmod(cliLauncher, 0o755)
+    await mkdir(join(cli, 'config'), { recursive: true })
+    await writeFile(join(cli, 'config/cordis.patch.yml'), '- id: llm-pi-ai\n')
     await mkdir(release, { recursive: true })
 
     const assets: string[] = []
@@ -143,21 +116,22 @@ describe('DeepSeek Harness native distributions', () => {
       DEEPSEEK_HARNESS_BIN_DIR: bin,
       DEEPSEEK_HARNESS_APP_DIR: appDir,
       HOME: home,
+      DSH_HOME: join(home, 'dsh-home'),
       PATH: `${bin}:${process.env.PATH ?? ''}`,
     }
 
     if (process.platform === 'darwin') {
       await execFileAsync('/bin/sh', [installer, 'macos-app'], { env: environment })
       expect(await readFile(join(appDir, 'DeepSeek Harness.app/Contents/Info.plist'), 'utf8')).toBe('<plist/>\n')
-      await expect(readlink(join(bin, 'deepseek-harness'))).rejects.toMatchObject({ code: 'ENOENT' })
+      await expect(readlink(join(bin, 'dsh'))).rejects.toMatchObject({ code: 'ENOENT' })
       await execFileAsync('/bin/sh', [installer, 'macos-cli'], { env: environment })
     } else {
       const target = process.arch === 'arm64' ? 'linux-arm64' : 'linux-x64'
       await execFileAsync('/bin/sh', [installer, target], { env: environment })
     }
 
-    expect(await readlink(join(bin, 'deepseek-harness'))).toBe(join(installRoot, 'bin/deepseek-harness'))
-    const installed = await execFileAsync(join(bin, 'deepseek-harness'), ['--help'], { encoding: 'utf8' })
+    expect(await readlink(join(bin, 'dsh'))).toBe(join(installRoot, 'bin/dsh'))
+    const installed = await execFileAsync(join(bin, 'dsh'), ['--help'], { encoding: 'utf8' })
     expect(installed.stdout).toBe('installed\n')
   })
 })

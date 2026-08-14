@@ -2,7 +2,7 @@
 
 [English](README.md) | 中文
 
-DeepSeek Harness 提供 Apple 芯片原生 App、macOS CLI，以及 x64 和 ARM64 两种自包含 Linux CLI。每个发行包都用自带的 Node.js 运行时与生产依赖闭包运行官方 DeepSeek Harness agent loop。DeepSeek 继续作为默认模型，OpenAI GPT 是同一 Harness loop 内可选的模型提供方。
+DeepSeek Harness 提供 Apple 芯片原生 App、macOS CLI、x64 和 ARM64 两种自包含 Linux CLI，以及 x64 和 ARM64 两种 Windows CLI。每个发行包都用自带的 Node.js 运行时与生产依赖闭包运行官方 DeepSeek Harness agent loop。DeepSeek 继续作为默认模型，OpenAI GPT 是同一 Harness loop 内可选的模型提供方。
 
 ## 选择安装场景
 
@@ -26,7 +26,7 @@ App 会安装到 `/Applications`；该目录不可写时改用 `~/Applications`�
 curl -fsSL https://github.com/srwang0506/deepseek-harness/releases/latest/download/install.sh | sh -s -- macos-cli
 ```
 
-运行时会安装到 `~/Library/Application Support/DeepSeek Harness CLI`，并链接为 `~/.local/bin/deepseek-harness`。
+运行时会安装到 `~/Library/Application Support/DeepSeek Harness CLI`，并链接为 `~/.local/bin/dsh`。
 
 ### Linux x64 服务器
 
@@ -44,7 +44,25 @@ curl -fsSL https://github.com/srwang0506/deepseek-harness/releases/latest/downlo
 curl -fsSL https://github.com/srwang0506/deepseek-harness/releases/latest/download/install.sh | sh -s -- linux-arm64
 ```
 
-两个 Linux 目标都会把运行时安装到 `${XDG_DATA_HOME:-~/.local/share}/deepseek-harness`，并创建 `~/.local/bin/deepseek-harness` 链接。通过命令名运行前，请确保 `~/.local/bin` 已加入 `PATH`。
+两个 Linux 目标都会把运行时安装到 `${XDG_DATA_HOME:-~/.local/share}/deepseek-harness`，并创建 `~/.local/bin/dsh` 链接。通过命令名运行前，请确保 `~/.local/bin` 已加入 `PATH`。
+
+### Windows x64
+
+在 `x64` Windows 上使用：
+
+```powershell
+irm https://github.com/srwang0506/deepseek-harness/releases/latest/download/install.ps1 | iex windows-x64
+```
+
+### Windows ARM64
+
+在 `arm64` Windows 上使用：
+
+```powershell
+irm https://github.com/srwang0506/deepseek-harness/releases/latest/download/install.ps1 | iex windows-arm64
+```
+
+两个 Windows 目标都会把运行时安装到 `%LOCALAPPDATA%\DeepSeek Harness CLI`，并创建 `%LOCALAPPDATA%\DeepSeek Harness\bin\dsh.cmd` 链接。通过命令名运行前，请确保 `%LOCALAPPDATA%\DeepSeek Harness\bin` 已加入 `PATH`。
 
 ## macOS App
 
@@ -54,26 +72,27 @@ App 使用 ad-hoc 签名，没有经过 Apple 公证。若下载后的构建被 
 
 App 把部署状态保存在 `~/Library/Application Support/DeepSeek Harness`，后端日志写入 `~/Library/Logs/DeepSeek Harness/backend.log`。可通过“DeepSeek Harness → 显示后端日志”定位日志，通过“显示 → 重新载入”刷新 Web 界面。
 
-## CLI 与 Linux 服务器
+## CLI
 
-安装后的命令是 `deepseek-harness`。它是终端原生的一次性 Harness 入口，不是另一套 Codex loop，也不是常驻 TUI。直接传入任务会创建持久化 Harness 会话，打印最终回答后退出；`web` 会启动与 App 相同的浏览器界面。
+安装后的命令是 `dsh`，即 Codex 风格的交互式终端客户端。裸 `dsh` 打开全屏会话；`dsh "任务"` 执行一个任务后退出；`dsh web` 启动与 App 相同的浏览器界面。
 
 ```sh
-deepseek-harness "inspect this repository and run the focused tests"
-deepseek-harness web --host 127.0.0.1 --port 8080
-deepseek-harness login
-deepseek-harness status
-deepseek-harness model
-deepseek-harness model deepseek
-deepseek-harness model gpt gpt-5.6-sol xhigh
-deepseek-harness logout
+dsh
+dsh "inspect this repository and run the focused tests"
+dsh web --host 127.0.0.1 --port 8080
+dsh login
+dsh status
+dsh model
+dsh model deepseek
+dsh model gpt gpt-5.6-sol xhigh
+dsh logout
 ```
 
-Linux 归档文件是 `deepseek-harness-linux-x64.tar.gz` 与 `deepseek-harness-linux-arm64.tar.gz`。Linux 状态默认保存在 `${XDG_DATA_HOME:-~/.local/share}/deepseek-harness`；所有平台都可用 `DSH_HOME` 覆盖状态目录。
+Linux 归档文件是 `deepseek-harness-linux-x64.tar.gz` 与 `deepseek-harness-linux-arm64.tar.gz`；Windows 归档文件是 `deepseek-harness-windows-x64.zip` 与 `deepseek-harness-windows-arm64.zip`。Linux 状态默认保存在 `${XDG_DATA_HOME:-~/.local/share}/deepseek-harness`，Windows 状态默认保存在 `%LOCALAPPDATA%\DeepSeek Harness`；所有平台都可用 `DSH_HOME` 覆盖状态目录。
 
-无桌面的服务器推荐使用 `deepseek-harness login device`。即使没有浏览器、桌面会话或剪贴板工具，CLI 也会打印设备码和验证网址。浏览器 OAuth 与 OpenAI Platform API-key 登录仍可分别通过 `login browser` 和 `login api-key` 使用；不指定方式调用 `login` 会显示全部三种选择。API key 从隐藏终端输入或标准输入读取，绝不会放在命令行参数中。
+无桌面的服务器推荐使用 `dsh login device`。即使没有浏览器、桌面会话或剪贴板工具，CLI 也会打印设备码和验证网址。浏览器 OAuth 与 OpenAI Platform API-key 登录仍可分别通过 `login browser` 和 `login api-key` 使用；不指定方式调用 `login` 会显示全部三种选择。API key 从隐藏终端输入或标准输入读取，绝不会放在命令行参数中。
 
-Web UI 不提供公网边缘认证，因此应只监听 loopback。远程使用时，先运行 `deepseek-harness web --host 127.0.0.1 --port 8080`，再从本机建立 SSH 隧道：
+Web UI 不提供公网边缘认证，因此应只监听 loopback。远程使用时，先运行 `dsh web --host 127.0.0.1 --port 8080`，再从本机建立 SSH 隧道：
 
 ```sh
 ssh -L 8080:127.0.0.1:8080 user@server
@@ -105,4 +124,11 @@ pnpm install --frozen-lockfile
 pnpm run server:build
 ```
 
-在 `--` 后传入 `--output <目录>` 可指定其他输出目录。推送 `deepseek-harness-v*` tag 后，GitHub Release workflow 会在原生 macOS ARM64、Linux x64 与 Linux ARM64 runner 上构建，发布四个归档和 `install.sh`，并生成 `SHA256SUMS`。
+在目标 x64 或 ARM64 Windows 主机上原生构建 Windows 归档：
+
+```powershell
+pnpm install --frozen-lockfile
+pnpm run windows:build
+```
+
+在 `--` 后传入 `--output <目录>` 可指定其他输出目录。推送 `deepseek-harness-v*` tag 后，GitHub Release workflow 会在原生 macOS ARM64、Linux x64、Linux ARM64 与 Windows x64 runner 上构建，发布全部归档、`install.sh` 和 `install.ps1`，并生成 `SHA256SUMS`。

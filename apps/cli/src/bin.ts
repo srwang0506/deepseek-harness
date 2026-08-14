@@ -47,6 +47,26 @@ switch (invocation.mode) {
     runDumpConfig(invocation.profile, invocation.defaultOnly, invocation.patches)
     break
   }
+  case 'login': {
+    const { loginOpenAi } = await import('./openai.ts')
+    await loginOpenAi(invocation.method)
+    break
+  }
+  case 'model': {
+    const { selectModel } = await import('./model.ts')
+    await selectModel(invocation.args)
+    break
+  }
+  case 'status': {
+    const { openAiStatus } = await import('./openai.ts')
+    await openAiStatus()
+    break
+  }
+  case 'logout': {
+    const { logoutOpenAi } = await import('./openai.ts')
+    await logoutOpenAi()
+    break
+  }
   default:
     invocation satisfies never
     throw new Error(`dsh: unhandled invocation mode ${JSON.stringify(invocation)}`)

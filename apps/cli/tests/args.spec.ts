@@ -67,6 +67,18 @@ describe('parseDshArgs', () => {
       .toEqual({ mode: 'plugin', profile: 'tui', args: ['add', '--save-dev', 'x'] })
   })
 
+  it('routes the OpenAI GPT login, model, status, and logout commands', () => {
+    expect(parse(['login'])).toEqual({ mode: 'login', method: undefined })
+    expect(parse(['login', 'browser'])).toEqual({ mode: 'login', method: 'browser' })
+    expect(parse(['login', 'device'])).toEqual({ mode: 'login', method: 'device' })
+    expect(parse(['login', 'api-key'])).toEqual({ mode: 'login', method: 'api-key' })
+    expect(parse(['model'])).toEqual({ mode: 'model', args: [] })
+    expect(parse(['model', 'gpt', 'gpt-5.6-sol', 'xhigh'])).toEqual({ mode: 'model', args: ['gpt', 'gpt-5.6-sol', 'xhigh'] })
+    expect(parse(['model', 'deepseek'])).toEqual({ mode: 'model', args: ['deepseek'] })
+    expect(parse(['status'])).toEqual({ mode: 'status' })
+    expect(parse(['logout'])).toEqual({ mode: 'logout' })
+  })
+
   it('routes profile and web config dumps', () => {
     expect(parse(['--profile', 'web', '--dump-config']))
       .toEqual({ mode: 'dump-config', profile: 'web', defaultOnly: false, patches: [] })

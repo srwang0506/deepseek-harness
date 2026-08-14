@@ -1,0 +1,17 @@
+# Machine-local home patch, shared by every profile (App and CLI). It enables
+# the optional OpenAI GPT provider route; the credential document lives under
+# DSH_HOME and is managed by `dsh login` / `dsh logout` / `dsh status`.
+
+- id: llm-pi-ai
+  config:
+    credentialStorePath: !!js (process.env.DSH_HOME ?? process.cwd()) + '/pi-ai-auth.json'
+    providers:
+      openai-codex:
+        displayName: OpenAI GPT
+        reasoning: high
+        cacheRetention: long
+        transport: auto
+        openAIResponses:
+          store: true
+          previousResponseId: true
+          reasoningContext: all_turns

@@ -2,7 +2,7 @@
 
 English | [中文](README.zh.md)
 
-DeepSeek Harness is available as a native Apple-silicon App, a macOS CLI, and self-contained Linux CLIs for x64 and ARM64. Every distribution runs the official DeepSeek Harness agent loop with its own Node.js runtime and production dependency closure. DeepSeek remains the default model; OpenAI GPT is an optional model provider inside the same Harness loop.
+DeepSeek Harness is available as a native Apple-silicon App, a macOS CLI, self-contained Linux CLIs for x64 and ARM64, and Windows CLIs for x64 and ARM64. Every distribution runs the official DeepSeek Harness agent loop with its own Node.js runtime and production dependency closure. DeepSeek remains the default model; OpenAI GPT is an optional model provider inside the same Harness loop.
 
 ## Choose an installation
 
@@ -26,7 +26,7 @@ Use this on an Apple-silicon Mac when you want terminal access. It does not inst
 curl -fsSL https://github.com/srwang0506/deepseek-harness/releases/latest/download/install.sh | sh -s -- macos-cli
 ```
 
-The runtime is installed in `~/Library/Application Support/DeepSeek Harness CLI` and linked as `~/.local/bin/deepseek-harness`.
+The runtime is installed in `~/Library/Application Support/DeepSeek Harness CLI` and linked as `~/.local/bin/dsh`.
 
 ### Linux x64 server
 
@@ -44,7 +44,25 @@ Use this on an `aarch64` or `arm64` Linux server:
 curl -fsSL https://github.com/srwang0506/deepseek-harness/releases/latest/download/install.sh | sh -s -- linux-arm64
 ```
 
-Both Linux targets install the runtime in `${XDG_DATA_HOME:-~/.local/share}/deepseek-harness` and link `~/.local/bin/deepseek-harness`. Make sure `~/.local/bin` is on `PATH` before invoking the command by name.
+Both Linux targets install the runtime in `${XDG_DATA_HOME:-~/.local/share}/deepseek-harness` and link `~/.local/bin/dsh`. Make sure `~/.local/bin` is on `PATH` before invoking the command by name.
+
+### Windows x64
+
+Use this on `x64` Windows:
+
+```powershell
+irm https://github.com/srwang0506/deepseek-harness/releases/latest/download/install.ps1 | iex windows-x64
+```
+
+### Windows ARM64
+
+Use this on `arm64` Windows:
+
+```powershell
+irm https://github.com/srwang0506/deepseek-harness/releases/latest/download/install.ps1 | iex windows-arm64
+```
+
+Both Windows targets install the runtime in `%LOCALAPPDATA%\DeepSeek Harness CLI` and link `%LOCALAPPDATA%\DeepSeek Harness\bin\dsh.cmd`. Make sure `%LOCALAPPDATA%\DeepSeek Harness\bin` is on `PATH` before invoking the command by name.
 
 ## macOS App
 
@@ -54,26 +72,27 @@ The App is ad-hoc signed rather than notarized. If macOS quarantines a downloade
 
 The App stores deployment state under `~/Library/Application Support/DeepSeek Harness` and writes its backend log to `~/Library/Logs/DeepSeek Harness/backend.log`. Use **DeepSeek Harness → Show backend log** to reveal the log and **View → Reload** to reload the web surface.
 
-## CLI and Linux servers
+## CLI
 
-The installed command is `deepseek-harness`. It is a terminal-native one-shot Harness entry point, not a separate Codex loop and not a persistent TUI. A plain task creates a persisted Harness session, prints the final answer, and exits. `web` starts the same browser surface used by the App.
+The installed command is `dsh`, the Codex-style interactive terminal client. Bare `dsh` opens a full-screen session; `dsh "task"` runs one task and exits; `dsh web` starts the same browser surface used by the App.
 
 ```sh
-deepseek-harness "inspect this repository and run the focused tests"
-deepseek-harness web --host 127.0.0.1 --port 8080
-deepseek-harness login
-deepseek-harness status
-deepseek-harness model
-deepseek-harness model deepseek
-deepseek-harness model gpt gpt-5.6-sol xhigh
-deepseek-harness logout
+dsh
+dsh "inspect this repository and run the focused tests"
+dsh web --host 127.0.0.1 --port 8080
+dsh login
+dsh status
+dsh model
+dsh model deepseek
+dsh model gpt gpt-5.6-sol xhigh
+dsh logout
 ```
 
-The Linux archives are `deepseek-harness-linux-x64.tar.gz` and `deepseek-harness-linux-arm64.tar.gz`. Linux state defaults to `${XDG_DATA_HOME:-~/.local/share}/deepseek-harness`; `DSH_HOME` overrides the state location on every platform.
+The Linux archives are `deepseek-harness-linux-x64.tar.gz` and `deepseek-harness-linux-arm64.tar.gz`; the Windows archives are `deepseek-harness-windows-x64.zip` and `deepseek-harness-windows-arm64.zip`. Linux state defaults to `${XDG_DATA_HOME:-~/.local/share}/deepseek-harness` and Windows state to `%LOCALAPPDATA%\DeepSeek Harness`; `DSH_HOME` overrides the state location on every platform.
 
-For a headless server, use `deepseek-harness login device`. The CLI prints the device code and verification URL even when no browser, desktop session, or clipboard helper is available. Browser OAuth and OpenAI Platform API-key login remain available through `login browser` and `login api-key`; calling `login` without a method presents all three choices. An API key is read from hidden terminal input or standard input and never from a command-line argument.
+For a headless server, use `dsh login device`. The CLI prints the device code and verification URL even when no browser, desktop session, or clipboard helper is available. Browser OAuth and OpenAI Platform API-key login remain available through `login browser` and `login api-key`; calling `login` without a method presents all three choices. An API key is read from hidden terminal input or standard input and never from a command-line argument.
 
-Keep the Web UI bound to loopback because it does not provide public-edge authentication. To use it remotely, start `deepseek-harness web --host 127.0.0.1 --port 8080` and create an SSH tunnel from your computer:
+Keep the Web UI bound to loopback because it does not provide public-edge authentication. To use it remotely, start `dsh web --host 127.0.0.1 --port 8080` and create an SSH tunnel from your computer:
 
 ```sh
 ssh -L 8080:127.0.0.1:8080 user@server
@@ -105,4 +124,11 @@ pnpm install --frozen-lockfile
 pnpm run server:build
 ```
 
-Pass `--output <directory>` after `--` to choose another output directory. Pushing a `deepseek-harness-v*` tag runs the GitHub Release workflow on native macOS ARM64, Linux x64, and Linux ARM64 runners, publishes all four archives plus `install.sh`, and generates `SHA256SUMS`.
+Build a Windows archive natively on the target x64 or ARM64 host:
+
+```powershell
+pnpm install --frozen-lockfile
+pnpm run windows:build
+```
+
+Pass `--output <directory>` after `--` to choose another output directory. Pushing a `deepseek-harness-v*` tag runs the GitHub Release workflow on native macOS ARM64, Linux x64, Linux ARM64, and Windows x64 runners, publishes all archives plus `install.sh` and `install.ps1`, and generates `SHA256SUMS`.

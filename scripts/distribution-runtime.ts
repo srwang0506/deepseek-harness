@@ -22,10 +22,7 @@ import { fileURLToPath } from 'node:url'
 export const PRODUCT_NAME = 'DeepSeek Harness'
 
 /** Stable shell command installed by every CLI distribution. */
-export const CLI_COMMAND = 'deepseek-harness'
-
-/** CLI entrypoint copied into the production runtime. */
-export const CLI_ENTRY_FILENAME = 'deepseek-cli.mjs'
+export const CLI_COMMAND = 'dsh'
 
 /** Absolute repository root for distribution source assets. */
 export const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
@@ -47,6 +44,11 @@ export async function run(command: string, args: readonly string[], cwd = repoRo
       else reject(new Error(`${command} exited with ${code ?? signal ?? 'unknown status'}`))
     })
   })
+}
+
+/** pnpm executable name; Windows resolves the `.cmd` shim, POSIX the bare name. */
+function pnpmCommand(): string {
+  return process.platform === 'win32' ? 'pnpm.cmd' : 'pnpm'
 }
 
 /**
@@ -165,7 +167,7 @@ export async function stagePackagedRuntime(runtime: string, config: string): Pro
     mkdir(runtime, { recursive: true }),
     mkdir(config, { recursive: true }),
   ])
-  await run('pnpm', [
+  await run(pnpmCommand(), [
     '--filter', 'deepseek-harness-desktop-runtime', 'deploy', '--legacy', '--prod',
     '--config.node-linker=hoisted', '--config.auto-install-peers=false',
     '--config.link-workspace-packages=true', deployedDsh,
@@ -173,15 +175,15 @@ export async function stagePackagedRuntime(runtime: string, config: string): Pro
   await restoreLegacyHoists(deployedDsh)
   await materializeStagedLinks(deployedDsh)
   // Legacy deploy mutates pnpm's source-install state; restore it for consecutive builders.
-  await run('pnpm', ['install', '--offline', '--frozen-lockfile'])
+  await run(pnpmCommand(), ['install', '--offline', '--frozen-lockfile'])
 
-  await copyFile(process.execPath, join(runtime, 'node'))
-  await chmod(join(runtime, 'node'), 0o755)
+  const nodeFilename = basename(process.execPath)
+  await copyFile(process.execPath, join(runtime, nodeFilename))
+  await chmod(join(runtime, nodeFilename), 0o755)
   await Promise.all([
     copyFile(join(repoRoot, 'desktop/desktop.cordis.patch.yml'), join(config, 'desktop.cordis.patch.yml')),
-    copyFile(join(repoRoot, 'desktop/cli.cordis.patch.yml'), join(config, 'cli.cordis.patch.yml')),
+    copyFile(join(repoRoot, 'desktop/cordis.patch.yml'), join(config, 'cordis.patch.yml')),
     copyFile(join(repoRoot, 'desktop/openai-oauth.mjs'), join(deployedDsh, 'openai-oauth.mjs')),
-    copyFile(join(repoRoot, 'apps/desktop-runtime/cli-entry.mjs'), join(deployedDsh, CLI_ENTRY_FILENAME)),
   ])
 }
 
@@ -198,7 +200,31 @@ while [ -L "$script_path" ]; do
   esac
 done
 bin_dir=$(CDPATH= cd -- "$(dirname -- "$script_path")" && pwd)
-exec "$bin_dir/../runtime/node" "$bin_dir/../runtime/dsh/${CLI_ENTRY_FILENAME}" "$@"
+runtime_dir="$bin_dir/../runtime"
+dsh_bin="$runtime_dir/dsh/node_modules/@deepseek-ai/dsh/lib/bin.js"
+if [ "$(uname -s)" = Darwin ]; then
+  : "\${HOME:?HOME must be set}"
+  DSH_HOME=\${DSH_HOME:-"$HOME/Library/Application Support/DeepSeek Harness"}
+else
+  DSH_HOME=\${DSH_HOME:-"\${XDG_DATA_HOME:-$HOME/.local/share}/deepseek-harness"}
+fi
+export DSH_HOME
+export PATH="$runtime_dir:$runtime_dir/dsh/node_modules/.bin:$PATH"
+exec "$runtime_dir/node" "$dsh_bin" "$@"
+`
+}
+
+/** @returns The relocatable Windows `.cmd` launcher used by the Windows CLI archive. */
+export function cliWrapperWindows(): string {
+  return `@echo off
+setlocal EnableExtensions
+set "script_dir=%~dp0"
+set "runtime_dir=%script_dir%..\\runtime"
+set "dsh_bin=%runtime_dir%\\dsh\\node_modules\\@deepseek-ai\\dsh\\lib\\bin.js"
+if not defined DSH_HOME set "DSH_HOME=%LOCALAPPDATA%\\DeepSeek Harness"
+set "PATH=%runtime_dir%;%runtime_dir%\\dsh\\node_modules\\.bin;%PATH%"
+"%runtime_dir%\\node.exe" "%dsh_bin%" %*
+exit /b %ERRORLEVEL%
 `
 }
 
@@ -210,6 +236,9 @@ exec "$bin_dir/../runtime/node" "$bin_dir/../runtime/dsh/${CLI_ENTRY_FILENAME}" 
  * @param config Staged configuration directory.
  */
 export async function populateCliDistribution(cliRoot: string, runtime: string, config: string): Promise<void> {
+  const windows = process.platform === 'win32'
+  const launcherName = windows ? `${CLI_COMMAND}.cmd` : CLI_COMMAND
+  const nodeFilename = basename(process.execPath)
   await mkdir(cliRoot, { recursive: true })
   await Promise.all([
     mkdir(join(cliRoot, 'bin'), { recursive: true }),
@@ -219,10 +248,10 @@ export async function populateCliDistribution(cliRoot: string, runtime: string, 
   await Promise.all([
     copyFile(join(repoRoot, 'desktop/README.md'), join(cliRoot, 'README.md')),
     copyFile(join(repoRoot, 'desktop/README.zh.md'), join(cliRoot, 'README.zh.md')),
-    writeFile(join(cliRoot, 'bin', CLI_COMMAND), cliWrapper(), { mode: 0o755 }),
+    writeFile(join(cliRoot, 'bin', launcherName), windows ? cliWrapperWindows() : cliWrapper(), { mode: 0o755 }),
   ])
-  await chmod(join(cliRoot, 'runtime/node'), 0o755)
-  await chmod(join(cliRoot, 'bin', CLI_COMMAND), 0o755)
+  await chmod(join(cliRoot, 'runtime', nodeFilename), 0o755)
+  await chmod(join(cliRoot, 'bin', launcherName), 0o755)
   await removeAppleDouble(cliRoot)
   const remaining = await findSymlink(cliRoot)
   if (remaining !== undefined) {

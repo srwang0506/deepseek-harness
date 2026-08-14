@@ -70,6 +70,15 @@
     },
     {
       "path": "../../packages/shell/tool-bash"
+    },
+    {
+      "path": "../../packages/llm/llm"
+    },
+    {
+      "path": "../../packages/llm/llm-pi-ai"
+    },
+    {
+      "path": "../../packages/util/atomic-write"
     }
   ]
 }

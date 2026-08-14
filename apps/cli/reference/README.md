@@ -74,6 +74,10 @@ New sessions default to the `workspace-write` permission preset. Bash and filesy
 
 `DSH_TOOLS_MODE` selects `native`, `code`, or `both` for the process; another value fails at boot. The shipped `minimal` agent preset keeps that deployment presentation, fixes the complete system prompt to `You are a helpful software engineer assistant.`, and composes only persistent `bash` plus `str_replace_editor`. Select 极简模式 when creating a Web session; every other prompt section and model-facing plugin remains absent from that agent while the shared browser, workspace, persistence, sandbox, and permission host stays in place.
 
+## OpenAI GPT login and model selection
+
+The optional OpenAI GPT provider authenticates through `dsh login` (browser OAuth, device-code OAuth, or an OpenAI Platform API key), reports its state through `dsh status`, and clears it through `dsh logout`. The credential lives at `$DSH_HOME/pi-ai-auth.json`, the same owner-only document the `llm-pi-ai` provider route reads for requests. `dsh model` shows or selects the default agent model: `dsh model` (or `model status`) prints the current selection, `dsh model deepseek` selects DeepSeek V4 Flash, and `dsh model gpt [model] [effort]` selects an OpenAI GPT route. `dsh login` with no method prompts for a choice when stdin is a terminal, and requires an explicit method otherwise.
+
 ## Shared deployment behavior
 
 The base bundle mounts the native DeepSeek adapter, settings and credential providers, stable `web_search`, and disabled session telemetry. Provider credentials resolve from the inherited environment, `$DSH_HOME/.credentials.yaml`, the invoking directory's `.env`, then `$DSH_HOME/.env`; the managed document is never materialized into `process.env`, while both `.env` files are ordinary launch environment layers. Search uses `DEEPSEEK_API_KEY` and accepts `DEEPSEEK_SEARCH_BASE_URL`; `web_fetch` is disabled unless a patch layer inserts a provider and enables it.

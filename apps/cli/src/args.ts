@@ -44,8 +44,39 @@ interface PluginInvocation {
   args: string[]
 }
 
+/** Log into the optional OpenAI GPT provider. */
+interface LoginInvocation {
+  mode: 'login'
+  /** Named login method; prompted interactively when omitted. */
+  method: string | undefined
+}
+
+/** Select or show the default agent model. */
+interface ModelInvocation {
+  mode: 'model'
+  /** `[family, modelId?, reasoningEffort?]`; empty shows the current selection. */
+  args: string[]
+}
+
+/** Print the OpenAI GPT login state. */
+interface StatusInvocation {
+  mode: 'status'
+}
+
+/** Remove the stored OpenAI GPT credential. */
+interface LogoutInvocation {
+  mode: 'logout'
+}
+
 /** The resolved `dsh` invocation. Help, version, and errors exit inside {@link parseDshArgs}. */
-export type DshInvocation = ProfileInvocation | DumpConfigInvocation | PluginInvocation
+export type DshInvocation =
+  | ProfileInvocation
+  | DumpConfigInvocation
+  | PluginInvocation
+  | LoginInvocation
+  | ModelInvocation
+  | StatusInvocation
+  | LogoutInvocation
 
 /** Launcher flags shared by the default command and the `web` alias. */
 interface BootOptions {
@@ -69,6 +100,9 @@ Examples:
   dsh --profile <name> ...                    boot any named profile
   dsh --profile web --help                    the web app's own flags and help
   dsh plugin --profile tui add <package>      install a plugin into a profile
+  dsh login                                   log into the optional OpenAI GPT provider
+  dsh model gpt                               select an OpenAI GPT default model
+  dsh status                                  show the OpenAI GPT login state
 `
 
 /**
@@ -181,6 +215,35 @@ export function parseDshArgs(argv: readonly string[], version: string): DshInvoc
       if (args.length === 0) program.error('error: plugin needs pnpm arguments to forward (e.g. add <package>)')
       resolved = { mode: 'plugin', profile: options.profile, args }
     })
+
+  const login = program.command('login').description('log into the optional OpenAI GPT provider')
+  login
+    .argument('[method]', 'browser, device, or api-key; prompted when omitted')
+    .action((method: string | undefined) => {
+      rejectParentOptions('login')
+      resolved = { mode: 'login', method }
+    })
+
+  const model = program.command('model').description('select or show the default agent model')
+  model
+    .allowUnknownOption()
+    .argument('[args...]', 'deepseek | gpt [model] [effort] | status; empty shows the current model')
+    .action((args: string[]) => {
+      rejectParentOptions('model')
+      resolved = { mode: 'model', args }
+    })
+
+  const status = program.command('status').description('show the OpenAI GPT login state')
+  status.action(() => {
+    rejectParentOptions('status')
+    resolved = { mode: 'status' }
+  })
+
+  const logout = program.command('logout').description('remove the stored OpenAI GPT credential')
+  logout.action(() => {
+    rejectParentOptions('logout')
+    resolved = { mode: 'logout' }
+  })
 
   try {
     program.parse(argv, { from: 'user' })

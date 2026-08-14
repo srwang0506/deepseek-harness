@@ -12,7 +12,7 @@ DeepSeek Harness 目前处于 _开发者预览_ 阶段，正在快速迭代。**
 
 ## 原生发行版
 
-本 fork 发布 macOS App、macOS CLI 与 Linux 服务器 CLI。请只选择一个安装场景；App 与 CLI 不会捆绑安装。每种安装都会校验 Release 哈希，并在替换前备份已有目标。
+本 fork 发布 macOS App、macOS CLI、Linux 服务器 CLI 与 Windows CLI。请只选择一个安装场景；App 与 CLI 不会捆绑安装。每种安装都会校验 Release 哈希，并在替换前备份已有目标。
 
 ### macOS 桌面 App
 
@@ -24,7 +24,7 @@ curl -fsSL https://github.com/srwang0506/deepseek-harness/releases/latest/downlo
 
 ### macOS CLI
 
-仅支持 Apple 芯片；安装 `deepseek-harness`，不安装桌面 App：
+仅支持 Apple 芯片；安装 `dsh`，不安装桌面 App：
 
 ```sh
 curl -fsSL https://github.com/srwang0506/deepseek-harness/releases/latest/download/install.sh | sh -s -- macos-cli
@@ -42,7 +42,13 @@ curl -fsSL https://github.com/srwang0506/deepseek-harness/releases/latest/downlo
 curl -fsSL https://github.com/srwang0506/deepseek-harness/releases/latest/download/install.sh | sh -s -- linux-arm64
 ```
 
-CLI 会链接为 `~/.local/bin/deepseek-harness`。DeepSeek 仍是默认模型；GPT 模型可选用浏览器 OAuth、设备码 OAuth 或 OpenAI Platform API key。安装路径、服务器登录、SSH 隧道、构建方式与安全说明请查看[原生发行指南](desktop/README.md)。
+### Windows
+
+```powershell
+irm https://github.com/srwang0506/deepseek-harness/releases/latest/download/install.ps1 | iex windows-x64
+```
+
+CLI 在 macOS 与 Linux 上链接为 `~/.local/bin/dsh`，在 Windows 上链接为 `%LOCALAPPDATA%\DeepSeek Harness\bin\dsh.cmd`。DeepSeek 仍是默认模型；GPT 模型可选用浏览器 OAuth、设备码 OAuth 或 OpenAI Platform API key。安装路径、服务器登录、SSH 隧道、构建方式与安全说明请查看[原生发行指南](desktop/README.md)。
 
 ## 运行
 
