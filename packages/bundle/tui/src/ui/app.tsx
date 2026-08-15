@@ -13,7 +13,7 @@ import type { KeyLike } from './keys.ts'
 import { applyComposerKey, emptyEdit } from './composer.ts'
 import type { ComposerEdit } from './composer.ts'
 import { editOverlayKey, historyRank, openEditOverlay, openFilesOverlay, openHistoryOverlay, overlayKey } from './overlay.ts'
-import type { EditMessageItem } from './store.ts'
+import type { EditMessageItem, StatusAccent, StatusSegment } from './store.ts'
 
 /** Callbacks the app needs from the agent driver. */
 export interface AppCallbacks {
@@ -61,6 +61,27 @@ function colorOf(kind: UiItem['kind']): string | undefined {
   }
 }
 
+/** Map one status accent to its Codex status-line color group. */
+function accentColor(accent: StatusAccent): 'cyan' | 'green' | 'magenta' {
+  switch (accent) {
+    case 'usage': return 'green'
+    case 'mode': return 'magenta'
+    case 'model':
+    case 'metadata':
+    default: return 'cyan'
+  }
+}
+
+/** Render one status-bar side's segments with dim ` · ` separators. */
+function statusSpans(segments: readonly StatusSegment[]): React.ReactNode {
+  return segments.map((segment, index) => (
+    <React.Fragment key={index}>
+      {index > 0 ? <Text color="grey" dimColor> · </Text> : null}
+      <Text color={accentColor(segment.accent)}>{segment.text}</Text>
+    </React.Fragment>
+  ))
+}
+
 /** Wrap one row in the optional color. */
 function colored(text: string, color: string | undefined): React.ReactNode {
   return color === undefined ? <Text>{text}</Text> : <Text color={color}>{text}</Text>
@@ -75,10 +96,12 @@ function selectSuggestion(line: string, chosen: string): string {
 
 /** Render one conversation row: rich markdown/diff, or a colored text row. */
 function renderRow(item: UiItem): React.ReactNode {
-  if (item.kind === 'assistant') return <MarkdownView text={item.text} />
+  if (item.kind === 'assistant') return <Box><Text color="grey" dimColor>• </Text><MarkdownView text={item.text} /></Box>
+  if (item.kind === 'reasoning') return <Text color="grey" dimColor>{`• ${item.text}`}</Text>
+  if (item.kind === 'separator') return <Text color="grey" dimColor>{'─'.repeat(72)}</Text>
   if (item.kind === 'diff') return <DiffView text={item.text} />
-  if (item.kind === 'tool') return <Text color="grey">{`⏺ ${item.text}`}</Text>
-  if (item.kind === 'user') return <Text color="grey">{`⏺ ${item.text}`}</Text>
+  if (item.kind === 'tool') return <Text color="grey" dimColor>{`• ${item.text}`}</Text>
+  if (item.kind === 'user') return <Text bold dimColor>{`› ${item.text}`}</Text>
   return colored(item.text, colorOf(item.kind))
 }
 
@@ -424,8 +447,8 @@ export function App({ store, callbacks }: { store: UiStore; callbacks: AppCallba
               {overlay.items.map((item, index) => {
                 const label = item.text.length > 78 ? `${item.text.slice(0, 78)}…` : item.text
                 return index === overlay.selected
-                  ? <Box key={item.seq}><Text bold>{`⏺ ${label}`}</Text></Box>
-                  : <Box key={item.seq}><Text color="grey">{`⏺ ${label}`}</Text></Box>
+                  ? <Box key={item.seq}><Text bold>{`› ${label}`}</Text></Box>
+                  : <Box key={item.seq}><Text color="grey">{`  ${label}`}</Text></Box>
               })}
             </Box>
           )}
@@ -433,8 +456,8 @@ export function App({ store, callbacks }: { store: UiStore; callbacks: AppCallba
             <Box flexDirection="column">
               <Box><Text bold>{overlay.kind === 'history' ? `history search: ${overlay.query}` : `file search: ${overlay.query}`} — ↑/↓ select · Enter reuse · Esc cancel</Text></Box>
               {overlay.matches.map((match, index) => index === overlay.selected
-                ? <Box key={index}><Text bold>{`⏺ ${match}`}</Text></Box>
-                : <Box key={index}><Text color="grey">{`⏺ ${match}`}</Text></Box>)}
+                ? <Box key={index}><Text bold>{`› ${match}`}</Text></Box>
+                : <Box key={index}><Text color="grey">{`  ${match}`}</Text></Box>)}
             </Box>
           )}
           {state.prompt === undefined
@@ -447,9 +470,14 @@ export function App({ store, callbacks }: { store: UiStore; callbacks: AppCallba
             )
             : <Box><Text>{promptLine ?? ''}</Text></Box>}
           <Box>
-            <Text color="grey" dimColor>{`${state.queued ? '⇥ queued · ' : ''}${spinner === '' ? '' : `${spinner} `}${status.left === '' ? 'dsh' : status.left}`}</Text>
+            <Box>
+              {state.queued ? <Text color="magenta">{'⇥ queued'}</Text> : null}
+              {state.queued ? <Text color="grey" dimColor> · </Text> : null}
+              {spinner === '' ? null : <Text color="grey" dimColor>{`${spinner} `}</Text>}
+              {statusSpans(status.left)}
+            </Box>
             <Box flexGrow={1} />
-            <Text color="grey" dimColor>{status.right}</Text>
+            <Box>{statusSpans(status.right)}</Box>
           </Box>
         </Box>
       )}

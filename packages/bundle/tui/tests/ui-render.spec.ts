@@ -57,7 +57,7 @@ describe('DiffView', () => {
 describe('App', () => {
   it('renders the composer, conversation, and the two-sided status bar beneath it', () => {
     const store = new UiStore()
-    store.setStatus({ left: 'sandbox read-only', right: 'deepseek-official/deepseek-v4-flash' })
+    store.setStatus({ left: [{ text: 'sandbox read-only', accent: 'mode' }], right: [{ text: 'deepseek-official/deepseek-v4-flash', accent: 'model' }] })
     store.push({ kind: 'assistant', text: 'hello' })
     const { lastFrame } = render(h(App, { store, callbacks: callbacks() }))
     const frame = lastFrame() ?? ''
@@ -74,8 +74,8 @@ describe('App', () => {
     store.push({ kind: 'tool', text: '[bash] ls' })
     const { lastFrame } = render(h(App, { store, callbacks: callbacks() }))
     const frame = lastFrame() ?? ''
-    expect(frame).toContain('⏺ fix the bug')
-    expect(frame).toContain('⏺ [bash] ls')
+    expect(frame).toContain('› fix the bug')
+    expect(frame).toContain('• [bash] ls')
   })
 
   it('queues the line with Tab while a turn runs instead of completing', async () => {
@@ -94,7 +94,7 @@ describe('App', () => {
   it('shows the queued marker in the status bar', () => {
     const store = new UiStore()
     store.setQueued(true)
-    store.setStatus({ left: 'sandbox read-only', right: 'p/m' })
+    store.setStatus({ left: [{ text: 'sandbox read-only', accent: 'mode' }], right: [{ text: 'p/m', accent: 'model' }] })
     const { lastFrame } = render(h(App, { store, callbacks: callbacks() }))
     expect(lastFrame() ?? '').toContain('⇥ queued')
   })
@@ -102,7 +102,7 @@ describe('App', () => {
   it('shows the braille spinner in the status bar while running', () => {
     const store = new UiStore()
     store.setRunning(true)
-    store.setStatus({ left: 'sandbox read-only', right: 'p/m' })
+    store.setStatus({ left: [{ text: 'sandbox read-only', accent: 'mode' }], right: [{ text: 'p/m', accent: 'model' }] })
     const { lastFrame } = render(h(App, { store, callbacks: callbacks() }))
     const frame = lastFrame() ?? ''
     expect(frame).toMatch(/[⠋⠙⠸⠴⠦⠇]/)
@@ -170,7 +170,7 @@ describe('App', () => {
     stdin.write('fix')
     await new Promise<void>((resolve) => { setImmediate(resolve) })
     expect(lastFrame() ?? '').toContain('history search: fix')
-    expect(lastFrame() ?? '').toContain('⏺ fix the bug')
+    expect(lastFrame() ?? '').toContain('› fix the bug')
     stdin.write('\r')
     await new Promise<void>((resolve) => { setImmediate(resolve) })
     stdin.write('\r')
@@ -207,7 +207,7 @@ describe('App', () => {
     stdin.write('@')
     await new Promise<void>((resolve) => { setImmediate(resolve) })
     expect(lastFrame() ?? '').toContain('file search: ')
-    expect(lastFrame() ?? '').toContain('⏺ src/index.ts')
+    expect(lastFrame() ?? '').toContain('› src/index.ts')
     stdin.write('read')
     await new Promise<void>((resolve) => { setImmediate(resolve) })
     expect(lastFrame() ?? '').toContain('file search: read')
@@ -233,7 +233,7 @@ describe('App', () => {
     stdin.write('\u001b[A')
     await new Promise<void>((resolve) => { setImmediate(resolve) })
     expect(lastFrame() ?? '').toContain('edit message')
-    expect(lastFrame() ?? '').toContain('⏺ second message')
+    expect(lastFrame() ?? '').toContain('› second message')
     stdin.write('\r')
     await new Promise<void>((resolve) => { setImmediate(resolve) })
     stdin.write(' fixed!')

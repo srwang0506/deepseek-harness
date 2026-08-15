@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-08-15-composer-history-search-overlay.md
-2026-08-15-composer-history-search-overlay.md: 718eda2eabe31f49fd4de8350b96682ba71b6ff3
-2026-08-15-composer-history-search-overlay.zh.md: a2d545bc7409a890c4f677fdbad90d6359537956
+2026-08-15-composer-history-search-overlay.md: 889b2e98e2498fefdf9fbd2e7536be5bb11afaa1
+2026-08-15-composer-history-search-overlay.zh.md: 7f190cfa30a44ee5fb3a6a371f9720681a989618

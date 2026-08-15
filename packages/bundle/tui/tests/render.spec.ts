@@ -13,12 +13,12 @@ function ev(type: string, data: unknown): SessionEvent {
 
 describe('render primitives', () => {
   it('renders user prompts and assistant markdown', () => {
-    expect(renderUserMessage('hi')).toBe('⏺ hi')
+    expect(renderUserMessage('hi')).toBe('› hi')
     expect(renderAssistantText('**bold**')).toBe('bold')
   })
 
   it('renders a tool call header with the Codex marker', () => {
-    expect(renderToolCall('bash', '{"command":"ls"}')).toBe('  ⏺ ls')
+    expect(renderToolCall('bash', '{"command":"ls"}')).toBe('  • ls')
   })
 })
 
@@ -35,7 +35,7 @@ describe('renderEvent', () => {
       source: { kind: 'user' },
     }))
     expect(renderEvent(user, {})).toBeUndefined()
-    expect(renderEvent(user, { replay: true })).toBe('⏺ hello')
+    expect(renderEvent(user, { replay: true })).toBe('› hello')
   })
 
   it('renders completed turns with no status line', () => {

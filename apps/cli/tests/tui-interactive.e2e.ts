@@ -505,7 +505,7 @@ describe.skipIf(process.platform === 'win32')('tui interactive REPL (real Loader
         { op: 'wait', text: 'mock interactive response', occurrences: 2 },
         { op: 'arrow', dir: 'up' },
         { op: 'wait', text: 'edit message' },
-        { op: 'wait', text: '⏺ second message' },
+        { op: 'wait', text: '› second message' },
         { op: 'send', text: '\n' },
         // The conversation echo plus the composer holding the loaded message.
         { op: 'wait', text: 'second message', occurrences: 2 },
@@ -722,11 +722,11 @@ describe.skipIf(process.platform === 'win32')('tui interactive REPL (real Loader
       const output = await runTuiPty(env, [
         { op: 'wait', text: 'dsh' },
         { op: 'wait', text: 'deepseek-official' },
-        { op: 'wait', text: '⏺ seed the resume-last session' },
+        { op: 'wait', text: '› seed the resume-last session' },
         { op: 'send', text: '/quit\n' },
         { op: 'expect-exit', code: 0 },
       ], ['resume', '--last'])
-      expect(output).toContain('⏺ seed the resume-last session')
+      expect(output).toContain('› seed the resume-last session')
     } finally {
       await server.close()
       await rm(home, { recursive: true, force: true })
@@ -758,12 +758,12 @@ describe.skipIf(process.platform === 'win32')('tui interactive REPL (real Loader
         // Newest first: move to the older session and resume it.
         { op: 'arrow', dir: 'down' },
         { op: 'send', text: '\n' },
-        { op: 'wait', text: '⏺ seed the older picker session' },
+        { op: 'wait', text: '› seed the older picker session' },
         { op: 'send', text: '/quit\n' },
         { op: 'expect-exit', code: 0 },
       ], ['resume'])
       expect(output).toContain('Resume session')
-      expect(output).toContain('⏺ seed the older picker session')
+      expect(output).toContain('› seed the older picker session')
     } finally {
       await server.close()
       await rm(home, { recursive: true, force: true })

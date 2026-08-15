@@ -57,8 +57,7 @@ import { loadCustomCommands } from './custom-commands.ts'
 import { buildFileIndex } from './file-index.ts'
 import { fuzzyFilter } from './ui/fuzzy.ts'
 import { UiStore } from './ui/store.ts'
-import type { EditMessageItem } from './ui/store.ts'
-import type { StatusInfo } from './ui/store.ts'
+import type { EditMessageItem, StatusInfo, StatusSegment } from './ui/store.ts'
 import { mountApp } from './ui/app.tsx'
 import type { AppCallbacks } from './ui/app.tsx'
 import { TerminalSessionController } from './controller.ts'
@@ -555,6 +554,7 @@ export function streamEventToStore(event: SessionEvent, store: UiStore): void {
     case 'turn/end': {
       const text = turnEndText(event.data.reason)
       if (text !== undefined) store.push({ kind: 'error', text })
+      store.push({ kind: 'separator', text: '' })
       return
     }
     default:
@@ -582,6 +582,7 @@ function streamSubagentEventToStore(event: SessionEvent, store: UiStore, label: 
     case 'turn/end': {
       const text = turnEndText(event.data.reason)
       if (text !== undefined) store.push({ kind: 'error', text: `${label} ${text}` })
+      store.push({ kind: 'separator', text: '' })
       return
     }
     default:
@@ -770,21 +771,25 @@ function togglePlanMode(ctx: Context, agent: Agent | undefined, store: UiStore):
 
 /**
  * The status-bar halves (Codex-style): session facts on the left, the model
- * on the right. The App renders them on one dim line above nothing else.
+ * on the right, each as a color-coded segment the App renders with dim ` · `
+ * separators (model cyan, usage green, mode magenta, metadata cyan).
  */
 function statusText(selection: ModelSelection, ctx: Context, agent: Agent, launchOverride: boolean): StatusInfo {
-  const right = [`${selection.provider}/${selection.model}${selection.reasoningEffort === undefined ? '' : ` (${selection.reasoningEffort})`}`]
-  if (launchOverride) right.push('-m')
-  const left: string[] = []
+  const right: StatusSegment[] = [{
+    text: `${selection.provider}/${selection.model}${selection.reasoningEffort === undefined ? '' : ` (${selection.reasoningEffort})`}`,
+    accent: 'model',
+  }]
+  if (launchOverride) right.push({ text: '-m', accent: 'metadata' })
+  const left: StatusSegment[] = []
   const sandbox = ctx.get('sandboxPolicy')?.resolve({ session: agent.session }).mode
-  if (sandbox !== undefined) left.push(`sandbox ${sandbox}`)
+  if (sandbox !== undefined) left.push({ text: `sandbox ${sandbox}`, accent: 'mode' })
   const meter = ctx.get('tokenMeter')
-  if (meter !== undefined) left.push(`${meter.measure(agent.session).totalTokens} tokens`)
+  if (meter !== undefined) left.push({ text: `${meter.measure(agent.session).totalTokens} tokens`, accent: 'usage' })
   const presets = ctx.get('permissionPresets')
-  if (presets !== undefined) left.push(presets.current(agent.session.events))
+  if (presets !== undefined) left.push({ text: presets.current(agent.session.events), accent: 'mode' })
   const planMode = ctx.get('planMode')
-  if (planMode !== undefined && planMode.get(agent).active) left.push('plan')
-  return { left: left.join(' · '), right: right.join(' · ') }
+  if (planMode !== undefined && planMode.get(agent).active) left.push({ text: 'plan', accent: 'mode' })
+  return { left, right }
 }
 
 /** The stored OpenAI GPT credential state, for the /status login row. */

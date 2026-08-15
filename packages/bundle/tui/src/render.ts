@@ -39,7 +39,7 @@ function indent(text: string, prefix: string): string {
  * @returns the prompt line.
  */
 export function renderUserMessage(text: string): string {
-  return `${grey('⏺')} ${text}`
+  return `${dim(bold('› '))}${text}`
 }
 
 /**
@@ -58,7 +58,7 @@ export function renderAssistantText(text: string): string {
  * @returns the header line.
  */
 export function renderToolCall(name: string, argsJson: string): string {
-  return `  ${grey('⏺')} ${bold(toolCallTitle(name, argsJson))}`
+  return `  ${dim('• ')}${bold(toolCallTitle(name, argsJson))}`
 }
 
 /**

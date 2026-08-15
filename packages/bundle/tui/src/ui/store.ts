@@ -11,7 +11,7 @@ export interface UiItem {
   /** Monotonic per-store key. */
   key: number
   /** Presentation kind, used for coloring/layout. */
-  kind: 'user' | 'assistant' | 'reasoning' | 'tool' | 'diff' | 'error' | 'info'
+  kind: 'user' | 'assistant' | 'reasoning' | 'tool' | 'diff' | 'error' | 'info' | 'separator'
   /** Plain text content. */
   text: string
 }
@@ -62,12 +62,23 @@ export type UiOverlay =
   | { kind: 'files'; query: string; matches: readonly string[]; selected: number }
   | { kind: 'edit-message'; items: readonly EditMessageItem[]; selected: number }
 
+/** A status-bar segment's accent, mapping to Codex's status-line color groups. */
+export type StatusAccent = 'model' | 'usage' | 'mode' | 'metadata'
+
+/** One color-coded status-bar segment. */
+export interface StatusSegment {
+  /** The rendered text. */
+  text: string
+  /** The accent group (model=cyan, usage=green, mode=magenta, metadata=cyan). */
+  accent: StatusAccent
+}
+
 /** The two-sided status bar: session facts left, model right (Codex-style). */
 export interface StatusInfo {
   /** Left side: sandbox mode, token usage, permission preset, plan mode. */
-  left: string
+  left: readonly StatusSegment[]
   /** Right side: provider/model, reasoning effort, launch override. */
-  right: string
+  right: readonly StatusSegment[]
 }
 
 /** The whole renderable UI snapshot. */
@@ -90,7 +101,7 @@ type Listener = () => void
  * `useSyncExternalStore`.
  */
 export class UiStore {
-  private state: UiState = { items: [], status: { left: 'dsh', right: '' }, running: false, queued: false, prompt: undefined, picker: undefined, overlay: undefined }
+  private state: UiState = { items: [], status: { left: [{ text: 'dsh', accent: 'metadata' }], right: [] }, running: false, queued: false, prompt: undefined, picker: undefined, overlay: undefined }
   private listeners = new Set<Listener>()
   private nextKey = 1
 
