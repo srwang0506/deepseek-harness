@@ -31,6 +31,8 @@ MCP 客户端桥接插件：连接外部 [Model Context Protocol](https://modelc
 
 模型会看到 `mcp__github__create_issue`、`mcp__web__search` 等工具，这与 Claude Code 和 Codex 使用的服务器限定形状相同。HMR（热模块替换）支持热替换：编辑配置项会触发断开 + 重新连接，无需重启进程；`serverName` 不变时会生成完全相同的工具名称。
 
+`loginMcpServer(url, options)` 为 Streamable HTTP 服务器运行 MCP Authorization 登录——授权服务器发现、PKCE 授权、loopback 重定向监听与经内置 MCP SDK 的令牌交换——并返回 `OAuthTokens`。令牌持久化与该行 `Authorization` 头由调用方负责（`dsh mcp login` CLI 正是如此）。选项：`openCommand`（带 `{url}` 占位符的 detached shell 模板）、`signal`、`timeoutMs` 与仅供测试的 `fetchFn`。
+
 ## 配置
 
 | 字段 | 传输 | 必填 | 描述 |

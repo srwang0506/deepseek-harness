@@ -78,7 +78,7 @@ switch (invocation.mode) {
     break
   }
   case 'mcp': {
-    const { addMcpServer, listMcpServers, removeMcpServer } = await import('./mcp.ts')
+    const { addMcpServer, getMcpServer, listMcpServers, loginMcpServer, logoutMcpServer, removeMcpServer } = await import('./mcp.ts')
     if (invocation.action === 'list') {
       await listMcpServers()
     } else if (invocation.action === 'add') {
@@ -87,6 +87,12 @@ switch (invocation.mode) {
         ...(invocation.url === undefined ? {} : { url: invocation.url }),
         args: invocation.args,
       })
+    } else if (invocation.action === 'get') {
+      await getMcpServer(invocation.name)
+    } else if (invocation.action === 'login') {
+      await loginMcpServer(invocation.name)
+    } else if (invocation.action === 'logout') {
+      await logoutMcpServer(invocation.name)
     } else {
       await removeMcpServer(invocation.name)
     }

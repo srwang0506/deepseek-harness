@@ -82,7 +82,7 @@ dsh web --help
 
 `dsh doctor` 打印环境诊断——Node 版本、`DEEPSEEK_API_KEY` 是否设置、harness home 是否可写、OpenAI GPT 登录状态——任一项失败时以非零退出码结束。`dsh completion [bash|zsh]` 打印针对启动器自有子命令的静态补全脚本。
 
-MCP 服务器是 home 级 `$DSH_HOME/cordis.patch.yml` 中的 `dsh-mcp-client` 行，因此每次 profile 启动时其工具都会加入。`dsh mcp list` 列出它们；`dsh mcp add <name> --command <cmd> [--arg <a>]…` 配置 stdio 服务器，`dsh mcp add <name> --url <url>` 配置 Streamable HTTP 服务器；`dsh mcp remove <name>` 删除某行。
+MCP 服务器是 home 级 `$DSH_HOME/cordis.patch.yml` 中的 `dsh-mcp-client` 行，因此每次 profile 启动时其工具都会加入。`dsh mcp list` 列出它们；`dsh mcp add <name> --command <cmd> [--arg <a>]…` 配置 stdio 服务器，`dsh mcp add <name> --url <url>` 配置 Streamable HTTP 服务器；`dsh mcp remove <name>` 删除某行；`dsh mcp get <name>` 打印单个服务器的配置。`dsh mcp login <name>` 为 Streamable HTTP 服务器运行 MCP Authorization 浏览器流程（发现、PKCE、loopback 重定向与令牌交换），把令牌存入 `$DSH_HOME/mcp-auth.json` 并设置该行的 `Authorization: Bearer` 头；`DSH_MCP_OPEN_COMMAND` 覆盖浏览器打开命令模板，`DSH_MCP_LOGIN_TIMEOUT_MS` 覆盖重定向等待时长。`dsh mcp logout <name>` 同时清除存储的令牌与该头。
 
 ## 共享部署行为
 

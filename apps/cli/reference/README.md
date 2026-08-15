@@ -82,7 +82,7 @@ Third-party providers are pi-ai routes stored in the `llm-pi-ai` settings sectio
 
 `dsh doctor` prints environment diagnostics — the Node version, whether `DEEPSEEK_API_KEY` is set, the harness home's writability, and the OpenAI GPT login state — and exits nonzero when any check fails. `dsh completion [bash|zsh]` prints a static completion script for the launcher-owned subcommands.
 
-MCP servers are `dsh-mcp-client` rows in the home-level `$DSH_HOME/cordis.patch.yml`, so their tools join every profile boot. `dsh mcp list` prints them; `dsh mcp add <name> --command <cmd> [--arg <a>]…` configures a stdio server and `dsh mcp add <name> --url <url>` a Streamable HTTP one; `dsh mcp remove <name>` deletes a row.
+MCP servers are `dsh-mcp-client` rows in the home-level `$DSH_HOME/cordis.patch.yml`, so their tools join every profile boot. `dsh mcp list` prints them; `dsh mcp add <name> --command <cmd> [--arg <a>]…` configures a stdio server and `dsh mcp add <name> --url <url>` a Streamable HTTP one; `dsh mcp remove <name>` deletes a row; `dsh mcp get <name>` prints one server's configuration. `dsh mcp login <name>` runs the MCP Authorization browser flow for a Streamable HTTP server (discovery, PKCE, a loopback redirect, and token exchange), stores the tokens in `$DSH_HOME/mcp-auth.json`, and sets the row's `Authorization: Bearer` header; `DSH_MCP_OPEN_COMMAND` overrides the browser opener template and `DSH_MCP_LOGIN_TIMEOUT_MS` the redirect wait. `dsh mcp logout <name>` clears both the stored tokens and the header.
 
 ## Shared deployment behavior
 

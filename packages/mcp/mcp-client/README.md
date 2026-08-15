@@ -31,6 +31,8 @@ One plugin instance per MCP server in `cordis.yml`:
 
 The model sees `mcp__github__create_issue`, `mcp__web__search`, … — the same server-qualified shape Claude Code and Codex use. HMR hot-swaps: editing the entry triggers disconnect + reconnect without process restart; an unchanged `serverName` reproduces identical tool names.
 
+`loginMcpServer(url, options)` runs the MCP Authorization login for a Streamable HTTP server — authorization-server discovery, a PKCE authorization, a loopback redirect listener, and the token exchange through the bundled MCP SDK — and returns the `OAuthTokens`. Callers own token persistence and the row's `Authorization` header (the `dsh mcp login` CLI does exactly that). Options: `openCommand` (a detached shell template with a `{url}` placeholder), `signal`, `timeoutMs`, and a test-only `fetchFn`.
+
 ## Config
 
 | Field | Transport | Required | Description |

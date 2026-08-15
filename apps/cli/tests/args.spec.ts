@@ -119,6 +119,12 @@ describe('parseDshArgs', () => {
       .toEqual({ mode: 'provider', action: 'remove', name: 'anthropic' })
   })
 
+  it('routes the MCP get, login, and logout commands', () => {
+    expect(parse(['mcp', 'get', 'github'])).toEqual({ mode: 'mcp', action: 'get', name: 'github', args: [] })
+    expect(parse(['mcp', 'login', 'github'])).toEqual({ mode: 'mcp', action: 'login', name: 'github', args: [] })
+    expect(parse(['mcp', 'logout', 'github'])).toEqual({ mode: 'mcp', action: 'logout', name: 'github', args: [] })
+  })
+
   it('routes the MCP server management commands', () => {
     expect(parse(['mcp', 'list'])).toEqual({ mode: 'mcp', action: 'list', name: '', args: [] })
     expect(parse(['mcp', 'add', 'github', '--command', 'npx', '--arg', '-y']))

@@ -83,8 +83,11 @@ interface CompletionInvocation {
 /** Manage MCP servers. */
 interface McpInvocation {
   mode: 'mcp'
-  /** `list` prints configured servers; `add`/`remove` edit the home patch. */
-  action: 'list' | 'add' | 'remove'
+  /**
+   * `list` prints configured servers; `add`/`remove` edit the home patch;
+   * `get` prints one; `login`/`logout` manage its OAuth bearer token.
+   */
+  action: 'list' | 'add' | 'remove' | 'get' | 'login' | 'logout'
   /** Stable server name; empty for `list`. */
   name: string
   /** add options; absent when unused. */
@@ -388,6 +391,30 @@ export function parseDshArgs(argv: readonly string[], version: string): DshInvoc
     rejectParentOptions('mcp')
     resolved = { mode: 'mcp', action: 'list', name: '', args: [] }
   })
+
+  const mcpGet = mcp.command('get').description('print one server\'s configuration')
+  mcpGet
+    .argument('<name>', 'server name written by a previous `mcp add`')
+    .action((name: string) => {
+      rejectParentOptions('mcp')
+      resolved = { mode: 'mcp', action: 'get', name, args: [] }
+    })
+
+  const mcpLogin = mcp.command('login').description('log a streamable-http server in through MCP OAuth (browser) and store its bearer token')
+  mcpLogin
+    .argument('<name>', 'server name written by a previous `mcp add --url`')
+    .action((name: string) => {
+      rejectParentOptions('mcp')
+      resolved = { mode: 'mcp', action: 'login', name, args: [] }
+    })
+
+  const mcpLogout = mcp.command('logout').description('clear one server\'s stored OAuth token and bearer header')
+  mcpLogout
+    .argument('<name>', 'server name written by a previous `mcp login`')
+    .action((name: string) => {
+      rejectParentOptions('mcp')
+      resolved = { mode: 'mcp', action: 'logout', name, args: [] }
+    })
 
   const update = program.command('update').description('re-run the published installer for the current platform')
   update.action(() => {
