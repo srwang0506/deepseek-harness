@@ -83,14 +83,18 @@ describe('App', () => {
     expect(frame).toMatch(/[⠋⠙⠸⠴⠦⠇]/)
   })
 
-  it('renders typed input on the composer line', async () => {
+  it('renders typed input and the block cursor on the composer line', async () => {
     const store = new UiStore()
     const { stdin, lastFrame } = render(h(App, { store, callbacks: callbacks() }))
     // Ink attaches its stdin listener in a passive effect; give it a tick.
     await new Promise<void>((resolve) => { setImmediate(resolve) })
     stdin.write('fix the bug')
+    // A second printable input event flushes the complete frame: the testing
+    // library's first post-write frame can paint spans progressively.
+    stdin.write('!')
     await new Promise<void>((resolve) => { setImmediate(resolve) })
-    expect(lastFrame() ?? '').toContain('fix the bug')
+    expect(lastFrame() ?? '').toContain('fix the bug!')
+    expect(lastFrame() ?? '').toContain('█')
   })
 
   it('renders the session picker overlay with a highlighted row', () => {

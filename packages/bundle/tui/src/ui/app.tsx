@@ -9,6 +9,8 @@ import { Box, Text, render, useInput } from 'ink'
 import type { UiStore, UiItem } from './store.ts'
 import { DiffView, MarkdownView } from './rich.tsx'
 import { keyIntent, pickerIntent } from './keys.ts'
+import { applyComposerKey, emptyEdit } from './composer.ts'
+import type { ComposerEdit } from './composer.ts'
 
 /** Callbacks the app needs from the agent driver. */
 export interface AppCallbacks {
@@ -77,14 +79,14 @@ function renderRow(item: UiItem): React.ReactNode {
 export function App({ store, callbacks }: { store: UiStore; callbacks: AppCallbacks }): React.JSX.Element {
   const state = useSyncExternalStore(store.subscribe, store.getSnapshot)
   const rows = process.stdout.rows
-  const [input, setInput] = useState('')
+  const [edit, setEdit] = useState<ComposerEdit>(emptyEdit)
   const [promptText, setPromptText] = useState('')
   const [selected, setSelected] = useState(0)
-  const inputRef = useRef('')
+  const editRef = useRef<ComposerEdit>(emptyEdit())
   const promptTextRef = useRef('')
   const historyRef = useRef<string[]>([])
   const historyIndexRef = useRef(-1)
-  inputRef.current = input
+  editRef.current = edit
   promptTextRef.current = promptText
 
   /** The running-turn spinner frame (Codex's braille spinner), advanced by a timer only while running. */
@@ -111,17 +113,17 @@ export function App({ store, callbacks }: { store: UiStore; callbacks: AppCallba
       const index = current < 0 ? history.length - 1 : Math.max(0, current - 1)
       historyIndexRef.current = index
       const entry = history[index]
-      if (entry !== undefined) setInput(entry)
+      if (entry !== undefined) setEdit({ text: entry, cursor: entry.length, vim: 'insert' })
     } else {
       if (current < 0) return
       const index = current + 1
       if (index >= history.length) {
         historyIndexRef.current = -1
-        setInput('')
+        setEdit(emptyEdit())
       } else {
         historyIndexRef.current = index
         const entry = history[index]
-        if (entry !== undefined) setInput(entry)
+        if (entry !== undefined) setEdit({ text: entry, cursor: entry.length, vim: 'insert' })
       }
     }
   }
@@ -156,36 +158,79 @@ export function App({ store, callbacks }: { store: UiStore; callbacks: AppCallba
       }
       return
     }
-    const intent = keyIntent(keyInput, key, state.prompt, promptTextRef.current)
-    switch (intent.type) {
-      case 'prompt-return': {
-        const value = promptTextRef.current
-        if (state.prompt?.kind === 'text' && state.prompt.multiLine
-          && value !== '' && !value.endsWith('\n')) {
-          setPromptText(value + '\n')
+    if (state.prompt !== undefined) {
+      const intent = keyIntent(keyInput, key, state.prompt, promptTextRef.current)
+      switch (intent.type) {
+        case 'prompt-return': {
+          const value = promptTextRef.current
+          if (state.prompt.kind === 'text' && state.prompt.multiLine
+            && value !== '' && !value.endsWith('\n')) {
+            setPromptText(value + '\n')
+            break
+          }
+          const text = value.trim()
+          setPromptText('')
+          state.prompt.answer(text === '' ? null : text)
           break
         }
-        const text = value.trim()
-        setPromptText('')
-        state.prompt?.answer(text === '' ? null : text)
+        case 'prompt-answer':
+          if (intent.value === null) setPromptText('')
+          state.prompt.answer(intent.value)
+          break
+        case 'prompt-text':
+          setPromptText(previous => intent.text === '\b' ? previous.slice(0, -1) : previous + intent.text)
+          break
+        case 'cancel':
+          callbacks.onCancel()
+          break
+        default:
+          break
+      }
+      return
+    }
+    // No prompt: the composer engine owns the key map (Vim motions included).
+    const result = applyComposerKey(editRef.current, keyInput, key)
+    switch (result.type) {
+      case 'edit':
+        historyIndexRef.current = -1
+        // Eager ref update: same-tick keystrokes must see the fresh state
+        // before React re-renders, or the second chunk edits stale text.
+        editRef.current = result.next
+        setEdit(result.next)
+        break
+      case 'submit':
+      case 'append-and-submit': {
+        const line = result.line
+        editRef.current = result.next
+        setEdit(result.next)
+        historyRef.current = [...historyRef.current, line]
+        historyIndexRef.current = -1
+        callbacks.onSubmit(line)
         break
       }
-      case 'prompt-answer':
-        if (intent.value === null) setPromptText('')
-        state.prompt?.answer(intent.value)
-        break
-      case 'prompt-text':
-        setPromptText(previous => intent.text === '\b' ? previous.slice(0, -1) : previous + intent.text)
+      case 'history-search':
+        // Ctrl+R opens the history search overlay (wired by the overlay rounds).
         break
       case 'quit':
         callbacks.onQuit()
         break
-      case 'submit': {
-        const line = inputRef.current
-        setInput('')
-        historyRef.current = [...historyRef.current, line]
-        historyIndexRef.current = -1
-        callbacks.onSubmit(line)
+      case 'cancel':
+        callbacks.onCancel()
+        break
+      case 'complete': {
+        const current = editRef.current.text
+        let next: string | undefined
+        if (suggestions.length > 0) {
+          const chosen = suggestions[Math.min(selected, suggestions.length - 1)]
+          if (chosen !== undefined) next = selectSuggestion(current, chosen)
+        } else {
+          next = callbacks.onComplete(current, current.length)
+        }
+        if (next !== undefined) {
+          historyIndexRef.current = -1
+          editRef.current = { text: next, cursor: next.length, vim: 'insert' }
+          setEdit(editRef.current)
+        }
         break
       }
       case 'cycle-approval':
@@ -194,20 +239,6 @@ export function App({ store, callbacks }: { store: UiStore; callbacks: AppCallba
       case 'toggle-plan':
         callbacks.onTogglePlan()
         break
-      case 'cancel':
-        callbacks.onCancel()
-        break
-      case 'complete': {
-        if (suggestions.length > 0) {
-          const safeSelected = Math.min(selected, suggestions.length - 1)
-          const chosen = suggestions[safeSelected]
-          if (chosen !== undefined) setInput(selectSuggestion(inputRef.current, chosen))
-        } else {
-          const completed = callbacks.onComplete(inputRef.current, inputRef.current.length)
-          if (completed !== undefined) setInput(completed)
-        }
-        break
-      }
       case 'suggest-up':
         if (suggestions.length > 0) setSelected(previous => Math.max(0, previous - 1))
         else recallHistory(-1)
@@ -216,26 +247,6 @@ export function App({ store, callbacks }: { store: UiStore; callbacks: AppCallba
         if (suggestions.length > 0) setSelected(previous => Math.min(Math.max(0, suggestions.length - 1), previous + 1))
         else recallHistory(1)
         break
-      case 'backspace':
-        historyIndexRef.current = -1
-        setInput(previous => previous.slice(0, -1))
-        break
-      case 'clear':
-        historyIndexRef.current = -1
-        setInput('')
-        break
-      case 'append':
-        historyIndexRef.current = -1
-        setInput(previous => previous + intent.text)
-        break
-      case 'append-and-submit': {
-        const line = inputRef.current + intent.text
-        setInput('')
-        historyRef.current = [...historyRef.current, line]
-        historyIndexRef.current = -1
-        callbacks.onSubmit(line)
-        break
-      }
       case 'none':
         break
     }
@@ -243,16 +254,21 @@ export function App({ store, callbacks }: { store: UiStore; callbacks: AppCallba
 
   // Keep the composer + status visible; the conversation shows its newest rows.
   const picker = state.picker
-  const suggestions = state.prompt === undefined && picker === undefined ? callbacks.onSuggest(input, input.length) : []
+  const suggestions = state.prompt === undefined && picker === undefined ? callbacks.onSuggest(edit.text, edit.cursor) : []
   const pickerRows = picker === undefined ? 0 : 2 + Math.min(picker.items.length, 12)
-  const visible = Math.max(0, rows - 2 - Math.min(suggestions.length, 8) - pickerRows)
+  const composerRows = state.prompt === undefined ? Math.max(1, edit.text.split('\n').length) : 1
+  const visible = Math.max(0, rows - composerRows - 1 - Math.min(suggestions.length, 8) - pickerRows)
   const items = state.items.slice(-visible)
   const promptLine = state.prompt === undefined
-    ? input
+    ? undefined
     : state.prompt.kind === 'choice'
       ? state.prompt.question
       : `${state.prompt.question} ${promptText}`
   const status = state.status
+  const cursorAt = edit.text.charAt(edit.cursor)
+  const cursorChar = cursorAt === '' || cursorAt === '\n' ? '█' : cursorAt
+  const cursorBefore = edit.text.slice(0, edit.cursor)
+  const cursorAfter = edit.text.slice(edit.cursor + 1)
 
   return (
     <Box flexDirection="column" height={rows}>
@@ -284,7 +300,15 @@ export function App({ store, callbacks }: { store: UiStore; callbacks: AppCallba
               })}
             </Box>
           )}
-          <Box><Text>{promptLine}</Text></Box>
+          {state.prompt === undefined
+            ? (
+              <Box><Text>
+                {cursorBefore}
+                <Text inverse>{cursorChar}</Text>
+                {cursorAfter}
+              </Text></Box>
+            )
+            : <Box><Text>{promptLine ?? ''}</Text></Box>}
           <Box>
             <Text color="grey" dimColor>{`${spinner === '' ? '' : `${spinner} `}${status.left === '' ? 'dsh' : status.left}`}</Text>
             <Box flexGrow={1} />

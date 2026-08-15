@@ -18,6 +18,7 @@ type PtyStep =
   | { op: 'wait'; text: string; occurrences?: number }
   | { op: 'sleep'; seconds: number }
   | { op: 'send'; text: string }
+  | { op: 'raw'; text: string }
   | { op: 'ctrl'; char: string }
   | { op: 'arrow'; dir: 'up' | 'down' }
   | { op: 'expect-exit'; code: number }
@@ -119,6 +120,10 @@ for step in json.loads(steps_json):
             settle_deadline = time.monotonic() + settle
             while time.monotonic() < settle_deadline:
                 pump()
+    elif op == "raw":
+        # A bare write without echo-wait: for keys whose rendered effect is
+        # invisible (Vim motions), where the echo-wait would stall.
+        os.write(fd, step["text"].encode("utf-8"))
     elif op == "ctrl":
         # The control byte for Ctrl+<char>, e.g. 'c' -> 0x03, 'd' -> 0x04.
         os.write(fd, bytes([ord(step["char"]) & 0x1F]))
@@ -325,6 +330,52 @@ describe.skipIf(process.platform === 'win32')('tui interactive REPL (real Loader
       const persisted = await persistedSessions(home)
       expect(persisted).toContain('sandbox/mode')
       expect(persisted).toContain('permission/preset')
+    } finally {
+      await server.close()
+      await rm(home, { recursive: true, force: true })
+    }
+  }, LOADER_SMOKE_TEST_TIMEOUT_MS)
+
+  it('edits the composer with Vim motions before submitting', async () => {
+    const apiKey = 'tui-vim-key'
+    const home = join(await mkdtemp(join(tmpdir(), 'dsh-tui-home-')), '.dsh')
+    const server = await startMockLlmServer({
+      sequence: ['success'],
+      repeatLast: true,
+      apiKey,
+      successText: 'mock interactive response',
+    })
+    try {
+      const output = await runTuiPty({
+        DSH_HOME: home,
+        DEEPSEEK_API_KEY: apiKey,
+        DEEPSEEK_BASE_URL: server.baseURL,
+        DSH_TELEMETRY_DISABLED: '1',
+        NO_COLOR: '1',
+      }, [
+        { op: 'wait', text: 'dsh' },
+        { op: 'wait', text: 'deepseek-official' },
+        { op: 'send', text: 'abcd' },
+        { op: 'wait', text: 'abcd' },
+        // Esc to normal mode, h left, x deletes 'd', Esc back to insert.
+        { op: 'raw', text: '\x1b' },
+        { op: 'sleep', seconds: 0.3 },
+        { op: 'raw', text: 'h' },
+        { op: 'sleep', seconds: 0.3 },
+        { op: 'raw', text: 'x' },
+        { op: 'sleep', seconds: 0.3 },
+        { op: 'raw', text: '\x1b' },
+        { op: 'sleep', seconds: 0.3 },
+        { op: 'send', text: 'e' },
+        { op: 'wait', text: 'abce' },
+        { op: 'send', text: '\n' },
+        { op: 'wait', text: 'mock interactive response' },
+        { op: 'send', text: '/quit\n' },
+        { op: 'expect-exit', code: 0 },
+      ])
+      // The edited line is what reaches the model: abcd - d + e at the cursor.
+      expect(server.requests.some(r => JSON.stringify(r.body).includes('abce'))).toBe(true)
+      expect(output).toContain('abce')
     } finally {
       await server.close()
       await rm(home, { recursive: true, force: true })

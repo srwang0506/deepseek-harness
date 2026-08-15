@@ -121,6 +121,8 @@ Keys:
   Ctrl+P                           toggle plan mode
   Ctrl+C                           cancel the running turn
   Ctrl+D                           quit and flush
+  Esc                              toggle Vim normal mode (h/l, 0/$, w/b, x, D, i/a/I/A)
+  Ctrl+U                           clear the composer line
 
 Custom commands: $DSH_HOME/commands/<name>.md (prompt template, $ARGUMENTS placeholder).
 `)
