@@ -486,7 +486,9 @@ export function streamEventToStore(event: SessionEvent, store: UiStore): void {
       return
     }
     case 'tool/call':
-      store.push({ kind: 'tool', text: toolCallTitle(event.data.name, event.data.arguments) })
+      // A Codex-style tool card: the tool name labels the action line, and
+      // the following tool/result row is the card body.
+      store.push({ kind: 'tool', text: `[${event.data.name}] ${toolCallTitle(event.data.name, event.data.arguments)}` })
       return
     case 'tool/result': {
       const diffs = diffsFromMeta(event.data.meta)
@@ -519,7 +521,7 @@ export function streamEventToStore(event: SessionEvent, store: UiStore): void {
 function streamSubagentEventToStore(event: SessionEvent, store: UiStore, label: string): void {
   switch (event.type) {
     case 'tool/call':
-      store.push({ kind: 'tool', text: `${label} ${toolCallTitle(event.data.name, event.data.arguments)}` })
+      store.push({ kind: 'tool', text: `${label} [${event.data.name}] ${toolCallTitle(event.data.name, event.data.arguments)}` })
       return
     case 'assistant/message': {
       const text = textOf(event.data.message.content)

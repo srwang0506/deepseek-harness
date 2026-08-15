@@ -20,7 +20,7 @@ describe('streamEventToStore', () => {
   it('pushes tool calls, results, and turn errors', () => {
     const store = new UiStore()
     streamEventToStore(ev('tool/call', { turn: 0, step: 0, callId: 'c', name: 'bash', arguments: '{"command":"ls"}' }), store)
-    expect(store.getSnapshot().items[0]).toMatchObject({ kind: 'tool', text: 'ls' })
+    expect(store.getSnapshot().items[0]).toMatchObject({ kind: 'tool', text: '[bash] ls' })
 
     const ended = new UiStore()
     streamEventToStore(ev('turn/end', { turn: 0, reason: { kind: 'error', error: { code: 'X', message: 'boom' } } }), ended)
