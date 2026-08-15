@@ -9,7 +9,7 @@ The `dsh` command is an interactive Codex-style coding terminal client, plus the
 | Command | Purpose |
 |---|---|
 | `dsh` | Start the interactive terminal client (the default `tui` profile). |
-| `dsh exec "job"` | Answer one task, print the final answer, and exit (one-shot). |
+| `dsh exec "job"` | Answer one task, print the final answer, and exit (one-shot). A bare `dsh exec` reads the task from piped stdin; `--json`/`--jsonl` select the result formats, `--output-schema` validates the final output (exit 2 on mismatch), and `-o` writes it to a file. |
 | `dsh "job"` | Alias of `dsh exec "job"`. |
 | `dsh resume` | Open the session picker and continue the selected session. |
 | `dsh resume --last` | Continue the most recent persisted session. |

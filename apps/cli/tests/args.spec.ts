@@ -64,8 +64,8 @@ describe('parseDshArgs', () => {
       .toEqual({ mode: 'profile', profile: 'tui', patches: ['a.yml'], args: ['hi'] })
     expect(parse(['exec', '--dump-config']))
       .toEqual({ mode: 'dump-config', profile: 'tui', defaultOnly: false, patches: [] })
-    expect(() => parse(['exec'])).toThrow()
-    expect(exitCode(['exec'])).toBe(1)
+    expect(parse(['exec']))
+      .toEqual({ mode: 'profile', profile: 'tui', patches: [], args: ['--stdin-task'] })
   })
 
   it('routes the resume subcommand into the tui profile', () => {

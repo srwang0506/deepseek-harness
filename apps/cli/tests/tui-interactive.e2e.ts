@@ -192,8 +192,16 @@ async function runTuiPty(env: Record<string, string>, steps: readonly PtyStep[],
   }
 }
 
-/** Seed one persisted session through `dsh exec` against the shared home. */
-async function runDshOneShot(env: Record<string, string>, task: string): Promise<void> {
+/**
+ * Run `dsh exec` outside a PTY: one task, optional extra flags, optional
+ * piped stdin. Returns the process outcome instead of throwing.
+ */
+async function runDshExec(
+  env: Record<string, string>,
+  task: string | undefined,
+  extraArgs: readonly string[] = [],
+  input?: string,
+): Promise<{ exitCode: number | null; stdout: string; stderr: string }> {
   const cwd = await mkdtemp(join(tmpdir(), 'dsh-tui-seed-'))
   const launch = resolveExampleLaunch({
     srcBin: dshBinScript,
@@ -202,18 +210,26 @@ async function runDshOneShot(env: Record<string, string>, task: string): Promise
     env,
   })
   try {
-    const result = await execa(launch.command, [...launch.args, 'exec', task], {
+    const args = [...launch.args, 'exec', ...(task === undefined ? [] : [task]), ...extraArgs]
+    const result = await execa(launch.command, args, {
       cwd,
       env: launch.env,
       timeout: 60_000,
       reject: false,
       stripFinalNewline: false,
+      ...(input === undefined ? {} : { input }),
     })
-    if (result.failed) {
-      throw new Error(`dsh exec seed failed (exit ${String(result.exitCode)}): ${result.stderr}`)
-    }
+    return { exitCode: result.exitCode ?? null, stdout: result.stdout, stderr: result.stderr }
   } finally {
     await rm(cwd, { recursive: true, force: true })
+  }
+}
+
+/** Seed one persisted session through `dsh exec` against the shared home. */
+async function runDshOneShot(env: Record<string, string>, task: string): Promise<void> {
+  const result = await runDshExec(env, task)
+  if (result.exitCode !== 0) {
+    throw new Error(`dsh exec seed failed (exit ${String(result.exitCode)}): ${result.stderr}`)
   }
 }
 
@@ -462,6 +478,84 @@ describe.skipIf(process.platform === 'win32')('tui interactive REPL (real Loader
       await rm(home, { recursive: true, force: true })
     }
   }, LOADER_SMOKE_TEST_TIMEOUT_MS * 3)
+
+  it('dsh exec reads the task from piped stdin', async () => {
+    const apiKey = 'tui-stdin-key'
+    const home = join(await mkdtemp(join(tmpdir(), 'dsh-tui-home-')), '.dsh')
+    const server = await startMockLlmServer({
+      sequence: ['success'],
+      repeatLast: true,
+      apiKey,
+      successText: 'mock interactive response',
+    })
+    try {
+      const result = await runDshExec({
+        DSH_HOME: home,
+        DEEPSEEK_API_KEY: apiKey,
+        DEEPSEEK_BASE_URL: server.baseURL,
+        DSH_TELEMETRY_DISABLED: '1',
+        NO_COLOR: '1',
+      }, undefined, [], 'piped prompt')
+      expect(result.exitCode).toBe(0)
+      expect(result.stdout).toBe('mock interactive response\n')
+      expect(JSON.stringify(server.requests.at(0)?.body)).toContain('piped prompt')
+    } finally {
+      await server.close()
+      await rm(home, { recursive: true, force: true })
+    }
+  }, LOADER_SMOKE_TEST_TIMEOUT_MS * 2)
+
+  it('dsh exec validates --output-schema and prints the parsed value', async () => {
+    const apiKey = 'tui-schema-key'
+    const home = join(await mkdtemp(join(tmpdir(), 'dsh-tui-home-')), '.dsh')
+    const server = await startMockLlmServer({
+      sequence: ['success'],
+      repeatLast: true,
+      apiKey,
+      successText: '{"ok":true,"count":3}',
+    })
+    const schema = '{"type":"object","required":["ok","count"],"properties":{"ok":{"type":"boolean"},"count":{"type":"integer"}}}'
+    try {
+      const result = await runDshExec({
+        DSH_HOME: home,
+        DEEPSEEK_API_KEY: apiKey,
+        DEEPSEEK_BASE_URL: server.baseURL,
+        DSH_TELEMETRY_DISABLED: '1',
+        NO_COLOR: '1',
+      }, 'answer as json', ['--output-schema', schema])
+      expect(result.exitCode).toBe(0)
+      expect(result.stdout).toBe('{"ok":true,"count":3}\n')
+    } finally {
+      await server.close()
+      await rm(home, { recursive: true, force: true })
+    }
+  }, LOADER_SMOKE_TEST_TIMEOUT_MS * 2)
+
+  it('dsh exec exits 2 when the output fails the requested schema', async () => {
+    const apiKey = 'tui-schema-fail-key'
+    const home = join(await mkdtemp(join(tmpdir(), 'dsh-tui-home-')), '.dsh')
+    const server = await startMockLlmServer({
+      sequence: ['success'],
+      repeatLast: true,
+      apiKey,
+      successText: 'not json at all',
+    })
+    const schema = '{"type":"object","required":["ok"],"properties":{"ok":{"type":"boolean"}}}'
+    try {
+      const result = await runDshExec({
+        DSH_HOME: home,
+        DEEPSEEK_API_KEY: apiKey,
+        DEEPSEEK_BASE_URL: server.baseURL,
+        DSH_TELEMETRY_DISABLED: '1',
+        NO_COLOR: '1',
+      }, 'answer as json', ['--output-schema', schema])
+      expect(result.exitCode).toBe(2)
+      expect(result.stderr).toContain('does not match the requested schema')
+    } finally {
+      await server.close()
+      await rm(home, { recursive: true, force: true })
+    }
+  }, LOADER_SMOKE_TEST_TIMEOUT_MS * 2)
 
   it('Ctrl+C cancels only the running turn, then keeps the session usable', async () => {
     const apiKey = 'tui-cancel-key'

@@ -48,3 +48,6 @@
         images: !!js ctx.tuiStartup.images ?? []
         ephemeral: !!js ctx.tuiStartup.ephemeral ?? false
         resumePicker: !!js ctx.tuiStartup.resumePicker ?? false
+        stdinTask: !!js ctx.tuiStartup.stdinTask ?? false
+        outputSchema: !!js ctx.tuiStartup.outputSchema ?? ''
+        outputFile: !!js ctx.tuiStartup.outputFile ?? ''

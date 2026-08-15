@@ -11,7 +11,7 @@
  * @module @deepseek-ai/dsh-tui
  */
 
-import { existsSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
 import { basename, join } from 'node:path'
 import { spawn } from 'node:child_process'
@@ -31,6 +31,8 @@ import type {} from '@deepseek-ai/dsh-user-approval'
 import type { ApprovalOutcome } from '@deepseek-ai/dsh-user-approval/types'
 import type {} from '@deepseek-ai/dsh-user-questions'
 import type { AskUserQuestionAnswer, AskUserQuestionItem, AskUserQuestionOption } from '@deepseek-ai/dsh-user-questions'
+import { assertSupportedJsonSchema, validateJsonSchemaValue } from '@deepseek-ai/dsh-tools'
+import type { JsonSchemaNode } from '@deepseek-ai/dsh-tools'
 import type { FileDiff } from '@deepseek-ai/dsh-tools/presentation'
 import type { ImageBlock } from '@deepseek-ai/dsh-llm'
 import type {} from '@deepseek-ai/dsh-session-persistence'
@@ -77,6 +79,12 @@ export interface Config {
   ephemeral: boolean
   /** Open the session picker instead of adopting a session at startup. */
   resumePicker: boolean
+  /** Read the one-shot task from piped stdin instead of the positional. */
+  stdinTask: boolean
+  /** JSON Schema (inline JSON or a file path) the final output must match. */
+  outputSchema: string
+  /** Write the final output to this file instead of stdout. */
+  outputFile: string
 }
 
 export const Config: z<Config> = z.object({
@@ -88,6 +96,9 @@ export const Config: z<Config> = z.object({
   images: z.array(z.string()).default([]),
   ephemeral: z.boolean().default(false),
   resumePicker: z.boolean().default(false),
+  stdinTask: z.boolean().default(false),
+  outputSchema: z.string().default(''),
+  outputFile: z.string().default(''),
 })
 
 /** The process streams the runner reads/writes; tests substitute captures. */
@@ -143,6 +154,59 @@ function fail(message: string, exit: (code: number) => void): void {
   exit(1)
 }
 
+/** The JSONL stream protocol version, stamped on every emitted line. */
+const JSONL_VERSION = 1
+
+/** Exit code for a final output that fails `--output-schema` validation. */
+const SCHEMA_MISMATCH_EXIT = 2
+
+/**
+ * Read the complete piped stdin as the one-shot task text.
+ * @param stdin - the process input stream.
+ * @returns the trimmed task text.
+ */
+function readStdinTask(stdin: NodeJS.ReadableStream & { isTTY?: boolean }): Promise<string> {
+  if (stdin.isTTY === true) {
+    return Promise.reject(new Error('exec: no task provided and stdin is a terminal; pass a task or pipe one in'))
+  }
+  return new Promise((resolve, reject) => {
+    let text = ''
+    stdin.on('data', (chunk: string | Buffer) => { text += typeof chunk === 'string' ? chunk : chunk.toString('utf8') })
+    stdin.on('end', () => { resolve(text.trim()) })
+    stdin.on('error', reject)
+  })
+}
+
+/**
+ * Parse the `--output-schema` argument: inline JSON, or a file path whose
+ * content is the schema.
+ * @param argument - the schema argument from the command line.
+ * @returns the supported schema node.
+ */
+function loadOutputSchema(argument: string): JsonSchemaNode {
+  const text = argument.trimStart().startsWith('{') ? argument : readFileSync(argument, 'utf8')
+  const parsed: unknown = JSON.parse(text)
+  assertSupportedJsonSchema(parsed)
+  return parsed
+}
+
+/**
+ * Validate the final assistant text against the requested schema.
+ * @param schema - the supported schema node.
+ * @param text - the final output text.
+ * @returns the parsed value, or the violation lines when it does not match.
+ */
+function validateFinalOutput(schema: JsonSchemaNode, text: string): { value: unknown } | { violations: string[] } {
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(text)
+  } catch {
+    return { violations: ['output is not valid JSON'] }
+  }
+  const violations = validateJsonSchemaValue(schema, parsed)
+  return violations.length === 0 ? { value: parsed } : { violations }
+}
+
 /** One-shot mode (`dsh exec`): drive one task and print its final assistant text. */
 async function runOneShot(ctx: Context, config: Config, exit: (code: number) => void): Promise<void> {
   await ctx.get('loader')?.await()
@@ -152,9 +216,16 @@ async function runOneShot(ctx: Context, config: Config, exit: (code: number) => 
   if (agents === undefined || defaultModel === undefined || sessions === undefined) return
   const selection = resolveSelection(defaultModel, config.model)
   const selectionRef: ModelSelectionRef = { current: selection, assembled: undefined }
+  if (config.outputFile !== '' && config.output === 'jsonl') {
+    internals.stderr.write('dsh: --output-file cannot stream --jsonl; drop one of the two\n')
+    exit(1)
+    return
+  }
+  const taskText = config.stdinTask ? await readStdinTask(internals.stdin) : config.task
 
-  // JSONL mode streams every committed session event after submission as one
-  // JSON line; events committed before submission (resume replay) are skipped.
+  // JSONL mode streams one versioned line per committed session event after
+  // submission; events committed before submission (resume replay) are
+  // skipped. The first line is the init envelope, the last the result.
   let firstSeq = Number.POSITIVE_INFINITY
   const controller = new TerminalSessionController({
     ctx,
@@ -164,7 +235,7 @@ async function runOneShot(ctx: Context, config: Config, exit: (code: number) => 
         if (config.output !== 'jsonl') return
         if (session.id !== controller.live()?.id) return
         if (event.seq < firstSeq) return
-        internals.stdout.write(`${JSON.stringify({ type: event.type, data: event.data })}\n`)
+        internals.stdout.write(`${JSON.stringify({ v: JSONL_VERSION, type: event.type, data: event.data })}\n`)
       },
       askApproval: () => Promise.resolve<ApprovalOutcome>('rejected'),
       askQuestions: () => Promise.resolve({ answers: [] }),
@@ -172,28 +243,55 @@ async function runOneShot(ctx: Context, config: Config, exit: (code: number) => 
   })
   const agent = await controller.start(config.resumeSessionId)
   firstSeq = agent.session.seq
+  if (config.output === 'jsonl') {
+    internals.stdout.write(`${JSON.stringify({
+      v: JSONL_VERSION,
+      type: 'init',
+      sessionId: agent.id,
+      provider: selection.provider,
+      model: selection.model,
+    })}\n`)
+  }
   const blocks = await imageBlocks(ctx, config.images)
   await controller.submit(createUserMessage({
-    content: [{ type: 'text', text: config.task }, ...blocks],
+    content: [{ type: 'text', text: taskText }, ...blocks],
     source: { kind: 'user' },
   }))
   const outcome = summarize(agent.session.events, firstSeq)
   const reason = outcome.reason
-  if (config.output === 'json') {
-    internals.stdout.write(`${JSON.stringify({
-      ok: reason?.kind === 'completed',
-      sessionId: agent.id,
-      provider: selection.provider,
-      model: selection.model,
-      text: outcome.text,
-      turnReason: reason?.kind ?? null,
-      error: reason?.kind === 'error' ? { code: reason.error.code, message: reason.error.message } : null,
-    })}\n`)
-  } else if (config.output !== 'jsonl') {
-    internals.stdout.write(outcome.text + '\n')
+  const jsonResult = {
+    ok: reason?.kind === 'completed',
+    sessionId: agent.id,
+    provider: selection.provider,
+    model: selection.model,
+    text: outcome.text,
+    turnReason: reason?.kind ?? null,
+    error: reason?.kind === 'error' ? { code: reason.error.code, message: reason.error.message } : null,
+  }
+  let finalOutput: string | undefined
+  if (config.output === 'jsonl') {
+    internals.stdout.write(`${JSON.stringify({ v: JSONL_VERSION, type: 'result', ...jsonResult })}\n`)
+  } else if (config.output === 'json') {
+    finalOutput = `${JSON.stringify(jsonResult)}\n`
+  } else if (config.outputSchema !== '') {
+    const schema = loadOutputSchema(config.outputSchema)
+    const checked = validateFinalOutput(schema, outcome.text)
+    if ('violations' in checked) {
+      internals.stderr.write(`dsh: output does not match the requested schema:\n${checked.violations.map(v => `  - ${v}`).join('\n')}\n`)
+      await controller.shutdown()
+      exit(SCHEMA_MISMATCH_EXIT)
+      return
+    }
+    finalOutput = `${JSON.stringify(checked.value)}\n`
+  } else {
+    finalOutput = outcome.text + '\n'
     if (reason?.kind === 'error') {
       internals.stderr.write(`dsh: ${reason.error.code}: ${reason.error.message}\n`)
     }
+  }
+  if (finalOutput !== undefined) {
+    if (config.outputFile === '') internals.stdout.write(finalOutput)
+    else writeFileSync(config.outputFile, finalOutput)
   }
   await controller.shutdown()
   if (config.ephemeral) {
@@ -1116,7 +1214,7 @@ export function apply(ctx: Context, config: Config): void {
   if (exit === undefined) {
     throw new Error('tui-runner: the launcher must provide ctx.appExit before the tree mounts')
   }
-  const oneShot = config.task.trim() !== ''
+  const oneShot = config.task.trim() !== '' || config.stdinTask
   void (oneShot ? runOneShot(ctx, config, exit) : runInteractive(ctx, config, exit))
     .catch((error: unknown) => { fail(error instanceof Error ? error.message : String(error), exit) })
 }

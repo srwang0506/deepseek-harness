@@ -9,7 +9,7 @@
 | 命令 | 用途 |
 |---|---|
 | `dsh` | 启动交互式终端客户端（默认的 `tui` profile）。 |
-| `dsh exec "job"` | 回答一个任务，打印最终答案并退出（一次性模式）。 |
+| `dsh exec "job"` | 回答一个任务，打印最终答案并退出（一次性模式）。裸 `dsh exec` 从管道 stdin 读取任务；`--json`/`--jsonl` 选择结果格式，`--output-schema` 校验最终输出（不匹配时以 2 退出），`-o` 将其写入文件。 |
 | `dsh "job"` | `dsh exec "job"` 的别名。 |
 | `dsh resume` | 打开会话选择器并继续所选会话。 |
 | `dsh resume --last` | 继续最近的持久化会话。 |

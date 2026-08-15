@@ -37,6 +37,12 @@ export interface TuiStartupValues {
   ephemeral: boolean
   /** Open the session picker instead of adopting a session at startup. */
   resumePicker: boolean
+  /** Read the one-shot task from piped stdin instead of the positional. */
+  stdinTask: boolean
+  /** JSON Schema (inline JSON or a file path) the final output must match. */
+  outputSchema: string
+  /** Write the final output to this file instead of stdout. */
+  outputFile: string
 }
 
 /** The flag family as commander parsed it. */
@@ -49,6 +55,9 @@ interface TuiOptions {
   image?: string[]
   ephemeral?: boolean
   resumePicker?: boolean
+  stdinTask?: boolean
+  outputSchema?: string
+  outputFile?: string
 }
 
 /** Repeatable single-value collector: `--image a.png --image b.png`. */
@@ -72,6 +81,9 @@ function tuiCommand(): Command {
     .option('-i, --image <path>', 'attach an image file (png/jpeg/webp/gif; repeatable)', collectImages, [])
     .option('--ephemeral', 'one-shot: delete the persisted session after the run')
     .option('--resume-picker', 'open the session picker on startup (dsh resume)')
+    .option('--stdin-task', 'read the one-shot task from piped stdin')
+    .option('--output-schema <schema>', 'JSON Schema (inline JSON or a file path) the one-shot output must match')
+    .option('-o, --output-file <path>', 'write the one-shot output to this file instead of stdout')
     .addHelpText('after', `
 Examples:
   dsh                              start an interactive session
@@ -80,6 +92,9 @@ Examples:
   dsh exec --json "run the tests"  one task, JSON result on stdout
   dsh exec --jsonl "run the tests" one task, streamed JSONL events
   dsh exec -i shot.png "fix this UI"  one task with an attached image
+  cat prompt.txt | dsh exec          one task read from piped stdin
+  dsh exec -o out.json "answer"      one task, output written to out.json
+  dsh exec --output-schema '{"type":"string"}' "answer"   validate the final output
   dsh --resume <session-id>        resume an earlier session interactively
   dsh --continue                   resume the most recent session
   dsh resume                       pick a session to resume from a list
@@ -126,6 +141,12 @@ export function apply(ctx: Context): void {
     if (options.resume !== undefined && options.continue === true) {
       program.error('error: --resume and --continue are mutually exclusive')
     }
+    if (options.stdinTask === true && program.args.length > 0) {
+      program.error('error: --stdin-task takes the task from stdin and no positional')
+    }
+    if (options.outputSchema !== undefined && options.outputSchema.trim() === '') {
+      program.error('error: --output-schema needs inline JSON or a file path')
+    }
     if (options.json === true && options.jsonl === true) {
       program.error('error: --json and --jsonl are mutually exclusive')
     }
@@ -138,6 +159,9 @@ export function apply(ctx: Context): void {
       output: options.jsonl === true ? 'jsonl' : options.json === true ? 'json' : 'text',
       images: options.image ?? [],
       ephemeral: options.ephemeral === true,
+      stdinTask: options.stdinTask === true,
+      outputSchema: options.outputSchema ?? '',
+      outputFile: options.outputFile ?? '',
     } satisfies TuiStartupValues)
   })
   parseCmdline(ctx, program)

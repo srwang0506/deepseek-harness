@@ -146,6 +146,9 @@ Examples:
   dsh                                         start the interactive terminal client
   dsh exec "run the tests"                    answer one task and exit (one-shot)
   dsh "run the tests"                         alias of: dsh exec "run the tests"
+  cat prompt.txt | dsh exec                   one task read from piped stdin
+  dsh exec -o out.txt "task"                  write the final output to a file
+  dsh exec --output-schema schema.json "task" validate the final output against a JSON Schema
   dsh resume                                  pick a persisted session to continue
   dsh resume --last                           continue the most recent session
   dsh resume <session-id>                     continue the named session
@@ -260,7 +263,7 @@ export function parseDshArgs(argv: readonly string[], version: string): DshInvoc
       resolved = resolveBoot(web, 'web', options, args)
     })
 
-  const exec = program.command('exec').description('answer one task and exit; the terminal app\'s own flags follow (--json, --jsonl, --resume, -m, -i, --ephemeral)')
+  const exec = program.command('exec').description('answer one task and exit; the terminal app\'s own flags follow (--json, --jsonl, --output-schema, -o, --resume, -m, -i, --ephemeral, --stdin-task)')
   exec
     .helpOption(false)
     .allowUnknownOption()
@@ -273,7 +276,10 @@ export function parseDshArgs(argv: readonly string[], version: string): DshInvoc
     .action((args: string[], options: BootOptions) => {
       rejectParentOptions('exec')
       if (args.length === 0 && options.dumpConfig !== true && options.dumpDefaultConfig !== true) {
-        program.error('error: exec needs a task, e.g. dsh exec "run the tests"')
+        // A bare `dsh exec` reads the task from piped stdin; the terminal app
+        // reports a usage error when stdin is a terminal.
+        resolved = resolveBoot(exec, 'tui', options, ['--stdin-task'])
+        return
       }
       resolved = resolveBoot(exec, 'tui', options, args)
     })
