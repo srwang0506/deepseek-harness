@@ -11,7 +11,7 @@ import { DiffView, MarkdownView } from './rich.tsx'
 import { keyIntent, pickerIntent } from './keys.ts'
 import { applyComposerKey, emptyEdit } from './composer.ts'
 import type { ComposerEdit } from './composer.ts'
-import { openHistoryOverlay, overlayKey } from './overlay.ts'
+import { historyRank, openFilesOverlay, openHistoryOverlay, overlayKey } from './overlay.ts'
 
 /** Callbacks the app needs from the agent driver. */
 export interface AppCallbacks {
@@ -29,6 +29,8 @@ export interface AppCallbacks {
   onCancel: () => void
   /** Suggest completions for the current line (slash commands or @-paths). */
   onSuggest: (line: string, cursor: number) => string[]
+  /** Fuzzy-rank the project-file index for one @ search query. */
+  searchFiles: (query: string) => string[]
   /** Resume the session highlighted in the picker. */
   onPickerSelect: (id: string) => void
   /** Fork the session highlighted in the picker and adopt the child. */
@@ -160,12 +162,18 @@ export function App({ store, callbacks }: { store: UiStore; callbacks: AppCallba
       return
     }
     if (state.overlay !== undefined) {
-      const next = overlayKey(state.overlay, keyInput, key, [...historyRef.current].reverse())
+      const overlay = state.overlay
+      const rank = overlay.kind === 'history' ? historyRank(historyRef.current) : callbacks.searchFiles
+      const next = overlayKey(overlay, keyInput, key, rank)
       if (next === undefined) {
         store.setOverlay(undefined)
       } else if ('insert' in next) {
         store.setOverlay(undefined)
-        editRef.current = { text: next.insert, cursor: next.insert.length, vim: 'insert' }
+        // A file insert replaces the trailing `@` the overlay opened from.
+        const text = overlay.kind === 'history'
+          ? next.insert
+          : editRef.current.text.slice(0, -1) + '@' + next.insert
+        editRef.current = { text, cursor: text.length, vim: 'insert' }
         setEdit(editRef.current)
       } else {
         store.setOverlay(next)
@@ -211,6 +219,10 @@ export function App({ store, callbacks }: { store: UiStore; callbacks: AppCallba
         // before React re-renders, or the second chunk edits stale text.
         editRef.current = result.next
         setEdit(result.next)
+        // A line-start or post-space `@` opens the project-file search.
+        if (result.next.vim === 'insert' && /(^|\s)@$/.test(result.next.text)) {
+          store.setOverlay(openFilesOverlay(callbacks.searchFiles))
+        }
         break
       case 'submit':
       case 'append-and-submit': {

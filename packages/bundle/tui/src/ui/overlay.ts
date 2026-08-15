@@ -11,17 +11,15 @@ import { isPrintable } from './keys.ts'
 import { fuzzyFilter } from './fuzzy.ts'
 import type { UiOverlay } from './store.ts'
 
-/** The ranked matches for one query over one candidate set. */
-function matchesFor(overlay: UiOverlay, candidates: readonly string[]): string[] {
-  return fuzzyFilter(overlay.query, candidates, candidate => candidate, 8)
-}
-
 /**
- * Resolve one parsed key against an open overlay.
+ * Resolve one parsed key against an open overlay. Query changes re-rank the
+ * matches through the supplied rank function, so the App decides which
+ * candidate source (submitted history or the project-file index) backs the
+ * overlay while this reducer stays pure.
  * @param overlay - the current overlay snapshot.
  * @param keyInput - the character (or paste) string, '' for named keys.
  * @param key - the parsed key flags.
- * @param candidates - the full candidate set (history lines or file paths).
+ * @param rank - resolves the ranked matches for one query string.
  * @returns the next overlay, `{ insert: text }` to close and insert, or
  *   `undefined` to close without inserting.
  */
@@ -29,7 +27,7 @@ export function overlayKey(
   overlay: UiOverlay,
   keyInput: string,
   key: KeyLike,
-  candidates: readonly string[],
+  rank: (query: string) => string[],
 ): UiOverlay | { insert: string } | undefined {
   if (key.escape || (key.ctrl && keyInput === 'c')) return undefined
   if (key.return || keyInput === '\r' || keyInput === '\n') {
@@ -46,11 +44,11 @@ export function overlayKey(
   }
   if (key.backspace) {
     const query = overlay.query.slice(0, -1)
-    return { ...overlay, query, matches: matchesFor({ ...overlay, query }, candidates), selected: 0 }
+    return { ...overlay, query, matches: rank(query), selected: 0 }
   }
   if (isPrintable(keyInput, key)) {
     const query = overlay.query + keyInput
-    return { ...overlay, query, matches: matchesFor({ ...overlay, query }, candidates), selected: 0 }
+    return { ...overlay, query, matches: rank(query), selected: 0 }
   }
   return overlay
 }
@@ -63,6 +61,28 @@ export function overlayKey(
  */
 export function openHistoryOverlay(history: readonly string[]): UiOverlay | undefined {
   if (history.length === 0) return undefined
-  const candidates = [...history].reverse()
-  return { kind: 'history', query: '', matches: candidates.slice(0, 8), selected: 0 }
+  return { kind: 'history', query: '', matches: historyRank(history)(''), selected: 0 }
+}
+
+/**
+ * The rank function for the history overlay: newest first, fuzzy-filtered,
+ * bounded to 8 matches.
+ * @param history - submitted lines in oldest-first order.
+ * @returns a rank function over one query string.
+ */
+export function historyRank(history: readonly string[]): (query: string) => string[] {
+  const newest = [...history].reverse()
+  return (query: string): string[] => fuzzyFilter(query, newest, candidate => candidate, 8)
+}
+
+/**
+ * Open a file-search overlay ranked by the supplied matcher. Unlike history,
+ * the overlay opens even with no matches, so the header explains the empty
+ * result while the user keeps typing.
+ * @param rank - resolves the ranked file matches for one query.
+ * @param query - the initial query text.
+ * @returns the overlay snapshot.
+ */
+export function openFilesOverlay(rank: (query: string) => string[], query = ''): UiOverlay {
+  return { kind: 'files', query, matches: rank(query), selected: 0 }
 }

@@ -53,6 +53,8 @@ import { diffsFromMeta, plainFileDiffs } from './diff.ts'
 import { extractText, toolCallTitle } from './present.ts'
 import { completeMention, extractMentions, readMention, suggestMentions } from './mention.ts'
 import { loadCustomCommands } from './custom-commands.ts'
+import { buildFileIndex } from './file-index.ts'
+import { fuzzyFilter } from './ui/fuzzy.ts'
 import { UiStore } from './ui/store.ts'
 import type { StatusInfo } from './ui/store.ts'
 import { mountApp } from './ui/app.tsx'
@@ -456,6 +458,7 @@ function helpText(): string {
     'Keys: Ctrl+D quits and flushes; typed input during a run steers the agent at its next step.',
     'Keys: Esc toggles Vim normal mode (h/l, 0/$, w/b, x, D, i/a/I/A); Ctrl+U clears the line.',
     'Keys: Ctrl+R searches the submitted prompt history; Enter reuses the selected line.',
+    'Keys: typing @ opens a fuzzy search over project files; Enter inserts the @path mention.',
     'A !-prefixed line runs a local shell command, e.g. !git status.',
     'A $name token invokes a skill, e.g. $demo-skill (skills load from $DSH_HOME/skills and .dsh/skills).',
     'Custom commands: $DSH_HOME/commands/<name>.md (prompt template with $ARGUMENTS).',
@@ -1028,6 +1031,14 @@ async function runInteractive(ctx: Context, config: Config, exit: (code: number)
   let quitResolve: (() => void) | undefined
   const quitPromise = new Promise<void>((resolve) => { quitResolve = resolve })
 
+  // The project-file index backs the @ search overlay; built lazily on the
+  // first query so an interactive boot never pays the walk up front.
+  let fileIndex: string[] | undefined
+  const searchFiles = (query: string): string[] => {
+    fileIndex ??= buildFileIndex(process.cwd())
+    return fuzzyFilter(query, fileIndex, path => path, 8)
+  }
+
   /** Open the session picker, or fall back to a fresh session when nothing is persisted. */
   const openPicker = async (): Promise<void> => {
     const candidates = await pickerSessions(ctx)
@@ -1392,6 +1403,7 @@ async function runInteractive(ctx: Context, config: Config, exit: (code: number)
       const agent = controller.live()
       return agent === undefined ? [] : suggestionsFor(ctx, agent, line, cursor)
     },
+    searchFiles,
     onPickerSelect: (id) => {
       void adoptFromPicker(id, false).catch((error: unknown) => {
         fail(error instanceof Error ? error.message : String(error), exit)

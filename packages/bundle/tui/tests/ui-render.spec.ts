@@ -19,6 +19,7 @@ function callbacks(overrides: Partial<AppCallbacks> = {}): AppCallbacks {
     onComplete: () => undefined,
     onCancel: () => {},
     onSuggest: () => [],
+    searchFiles: () => [],
     onPickerSelect: () => {},
     onPickerFork: () => {},
     onPickerCancel: () => {},
@@ -168,6 +169,29 @@ describe('App', () => {
     await new Promise<void>((resolve) => { setImmediate(resolve) })
     expect(lastFrame() ?? '').not.toContain('history search')
     expect(submitted).toEqual(['hello'])
+  })
+
+  it('opens the file search on a typed @ and inserts the selected path', async () => {
+    const store = new UiStore()
+    const submitted: string[] = []
+    const withFiles = callbacks({
+      onSubmit: (line) => { submitted.push(line) },
+      searchFiles: query => (query === '' ? ['src/index.ts', 'README.md'] : ['README.md']),
+    })
+    const { stdin, lastFrame } = render(h(App, { store, callbacks: withFiles }))
+    await new Promise<void>((resolve) => { setImmediate(resolve) })
+    stdin.write('@')
+    await new Promise<void>((resolve) => { setImmediate(resolve) })
+    expect(lastFrame() ?? '').toContain('file search: ')
+    expect(lastFrame() ?? '').toContain('⏺ src/index.ts')
+    stdin.write('read')
+    await new Promise<void>((resolve) => { setImmediate(resolve) })
+    expect(lastFrame() ?? '').toContain('file search: read')
+    stdin.write('\r')
+    await new Promise<void>((resolve) => { setImmediate(resolve) })
+    stdin.write('\r')
+    await new Promise<void>((resolve) => { setImmediate(resolve) })
+    expect(submitted).toEqual(['@README.md'])
   })
 
   it('shows suggestion rows above the input', () => {

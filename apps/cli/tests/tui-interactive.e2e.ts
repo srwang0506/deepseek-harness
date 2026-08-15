@@ -428,6 +428,51 @@ describe.skipIf(process.platform === 'win32')('tui interactive REPL (real Loader
     }
   }, LOADER_SMOKE_TEST_TIMEOUT_MS)
 
+  it('searches project files with @ and inserts the mention', async () => {
+    const apiKey = 'tui-files-key'
+    const home = join(await mkdtemp(join(tmpdir(), 'dsh-tui-home-')), '.dsh')
+    const server = await startMockLlmServer({
+      sequence: ['success'],
+      repeatLast: true,
+      apiKey,
+      successText: 'mock interactive response',
+    })
+    try {
+      const output = await runTuiPty({
+        DSH_HOME: home,
+        DEEPSEEK_API_KEY: apiKey,
+        DEEPSEEK_BASE_URL: server.baseURL,
+        DSH_TELEMETRY_DISABLED: '1',
+        NO_COLOR: '1',
+      }, [
+        { op: 'wait', text: 'dsh' },
+        { op: 'wait', text: 'deepseek-official' },
+        // Seed a project file in the PTY's own cwd: the @ index builds on
+        // first use, so these files must exist before the first @.
+        { op: 'send', text: '!mkdir -p src\n' },
+        { op: 'wait', text: 'exit 0' },
+        { op: 'send', text: '!echo marker-abc > src/hello.ts\n' },
+        { op: 'wait', text: 'exit 0', occurrences: 2 },
+        { op: 'send', text: '@' },
+        { op: 'wait', text: 'file search: ' },
+        { op: 'send', text: 'hello' },
+        { op: 'wait', text: 'src/hello.ts' },
+        { op: 'send', text: '\n' },
+        { op: 'wait', text: '@src/hello.ts' },
+        { op: 'send', text: '\n' },
+        { op: 'wait', text: 'mock interactive response' },
+        { op: 'send', text: '/quit\n' },
+        { op: 'expect-exit', code: 0 },
+      ])
+      expect(output).toContain('file search: hello')
+      // The mentioned file's content reaches the model as injected context.
+      expect(server.requests.some(r => JSON.stringify(r.body).includes('marker-abc'))).toBe(true)
+    } finally {
+      await server.close()
+      await rm(home, { recursive: true, force: true })
+    }
+  }, LOADER_SMOKE_TEST_TIMEOUT_MS)
+
   it('runs multiple turns, echoes Chinese input, and flushes sessions on Ctrl+D', async () => {
     const apiKey = 'tui-multiturn-key'
     const home = join(await mkdtemp(join(tmpdir(), 'dsh-tui-home-')), '.dsh')
