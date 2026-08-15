@@ -40,7 +40,7 @@ describe('replayEventToStore', () => {
   })
 })
 
-import { promptApproval, promptQuestions, restoreSessionSelection } from '../src/index.ts'
+import { extractSkillInvocations, promptApproval, promptQuestions, restoreSessionSelection } from '../src/index.ts'
 import { ReasoningEffortId } from '@deepseek-ai/dsh-llm'
 import { Context } from '@deepseek-ai/cordis'
 import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
@@ -62,6 +62,16 @@ function answerPrompt<T>(pending: Promise<T>, store: UiStore, value: string | nu
   })()
   return pending
 }
+
+describe('extractSkillInvocations', () => {
+  it('collects unique kebab-case names in first-appearance order', () => {
+    expect(extractSkillInvocations('$demo-skill and $other-1, then $demo-skill again')).toEqual(['demo-skill', 'other-1'])
+  })
+
+  it('collects digit-bearing names and ignores empty tokens', () => {
+    expect(extractSkillInvocations('costs $5 and $ not-a-skill')).toEqual(['5'])
+  })
+})
 
 describe('restoreSessionSelection', () => {
   it('restores the last route and reasoning effort from the session log', async () => {

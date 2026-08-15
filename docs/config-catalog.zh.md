@@ -31,7 +31,7 @@ export interface AcpConfig {
 
 依赖：`Stream`（`@agentclientprotocol/sdk`）
 
-来源：[`packages/acp/acp/src/index.ts:70`](../packages/acp/acp/src/index.ts)
+来源：[`packages/acp/acp/src/index.ts:68`](../packages/acp/acp/src/index.ts)
 
 <a id="deepseek-aidsh-acp-demo"></a>
 
@@ -1393,7 +1393,7 @@ export interface PlanModeConfig {
 }
 ```
 
-来源：[`packages/plan/plan-mode/src/index.ts:70`](../packages/plan/plan-mode/src/index.ts)
+来源：[`packages/plan/plan-mode/src/index.ts:68`](../packages/plan/plan-mode/src/index.ts)
 
 <a id="deepseek-aidsh-pwsh-local"></a>
 
@@ -1649,7 +1649,7 @@ export interface Config {
 export type JournalMode = 'wal' | 'delete' | 'truncate' | 'persist'
 ```
 
-来源：[`packages/session/session-persistence-sqlite/src/index.ts:70`](../packages/session/session-persistence-sqlite/src/index.ts)
+来源：[`packages/session/session-persistence-sqlite/src/index.ts:68`](../packages/session/session-persistence-sqlite/src/index.ts)
 
 <a id="deepseek-aidsh-session-projection-cache"></a>
 

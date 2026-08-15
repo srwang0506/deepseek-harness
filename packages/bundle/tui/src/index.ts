@@ -41,6 +41,8 @@ import type {} from '@deepseek-ai/dsh-commands'
 import type {} from '@deepseek-ai/dsh-permission-presets'
 import type {} from '@deepseek-ai/dsh-plan-mode'
 import { loginOpenAi, logoutOpenAi, PiAiCredentialStore } from '@deepseek-ai/dsh-llm-pi-ai'
+import { isUserInvocable, renderSkillContent } from '@deepseek-ai/dsh-skill'
+import type {} from '@deepseek-ai/dsh-skill'
 import type {} from '@deepseek-ai/dsh-token-meter'
 import { dshHomePath } from '@deepseek-ai/dsh-home-paths'
 import { parseSlash } from './slash.ts'
@@ -178,6 +180,25 @@ export function restoreSessionSelection(session: Session): ModelSelection | unde
     model: context.model,
     ...(effort === undefined ? {} : { reasoningEffort: effort }),
   }
+}
+
+/** The `$skill` invocation token grammar: one kebab-case name after `$`. */
+const SKILL_INVOCATION = /\$([a-z0-9]+(?:-[a-z0-9]+)*)/g
+
+/**
+ * Extract the unique skill names a prompt line invokes with `$name`, in
+ * first-appearance order.
+ * @param line - the submitted prompt line.
+ * @returns unique skill names, or an empty list when none are named.
+ */
+export function extractSkillInvocations(line: string): string[] {
+  const names: string[] = []
+  for (const match of line.matchAll(SKILL_INVOCATION)) {
+    const name = match[1]
+    if (name === undefined || names.includes(name)) continue
+    names.push(name)
+  }
+  return names
 }
 
 /** The JSONL stream protocol version, stamped on every emitted line. */
@@ -429,6 +450,7 @@ function helpText(): string {
     'Keys: Shift+Tab cycles the permission preset; Ctrl+P toggles plan mode; Ctrl+C cancels the turn.',
     'Keys: Ctrl+D quits and flushes; typed input during a run steers the agent at its next step.',
     'A !-prefixed line runs a local shell command, e.g. !git status.',
+    'A $name token invokes a skill, e.g. $demo-skill (skills load from $DSH_HOME/skills and .dsh/skills).',
     'Custom commands: $DSH_HOME/commands/<name>.md (prompt template with $ARGUMENTS).',
   ].join('\n')
 }
@@ -1155,6 +1177,19 @@ async function runInteractive(ctx: Context, config: Config, exit: (code: number)
       }
     }
     if (line.trim() === '') return
+    const skills = ctx.get('skills')
+    for (const name of extractSkillInvocations(line)) {
+      const skill = skills === undefined ? undefined : await skills.get(name)
+      if (skill === undefined || !isUserInvocable(skill)) {
+        store.push({ kind: 'error', text: `unknown skill $${name}` })
+        continue
+      }
+      controller.inject(createUserMessage({
+        content: [{ type: 'text', text: renderSkillContent(skill) }],
+        source: { kind: 'skill-invocation', name, form: 'instructions' },
+      }))
+      store.push({ kind: 'info', text: `skill ${name} invoked` })
+    }
     for (const path of extractMentions(line)) {
       const mention = readMention(path, process.cwd())
       if (mention === undefined) continue

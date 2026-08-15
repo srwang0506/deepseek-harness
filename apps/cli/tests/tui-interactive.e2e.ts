@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -551,6 +551,52 @@ describe.skipIf(process.platform === 'win32')('tui interactive REPL (real Loader
       }, 'answer as json', ['--output-schema', schema])
       expect(result.exitCode).toBe(2)
       expect(result.stderr).toContain('does not match the requested schema')
+    } finally {
+      await server.close()
+      await rm(home, { recursive: true, force: true })
+    }
+  }, LOADER_SMOKE_TEST_TIMEOUT_MS * 2)
+
+  it('invokes skills with the $name trigger and injects their instructions', async () => {
+    const apiKey = 'tui-skill-key'
+    const home = join(await mkdtemp(join(tmpdir(), 'dsh-tui-home-')), '.dsh')
+    await mkdir(join(home, 'skills'), { recursive: true })
+    await writeFile(join(home, 'skills', 'demo-skill.md'), [
+      '---',
+      'name: demo-skill',
+      'description: Answer with the single word SKILLED.',
+      '---',
+      'Always answer with the single word SKILLED when this skill is active.',
+      '',
+    ].join('\n'))
+    const server = await startMockLlmServer({
+      sequence: ['success'],
+      repeatLast: true,
+      apiKey,
+      successText: 'mock interactive response',
+    })
+    try {
+      const output = await runTuiPty({
+        DSH_HOME: home,
+        DEEPSEEK_API_KEY: apiKey,
+        DEEPSEEK_BASE_URL: server.baseURL,
+        DSH_TELEMETRY_DISABLED: '1',
+        NO_COLOR: '1',
+      }, [
+        { op: 'wait', text: '>' },
+        { op: 'wait', text: 'deepseek-official' },
+        { op: 'send', text: '$nope please\n' },
+        { op: 'wait', text: 'unknown skill $nope' },
+        { op: 'send', text: '$demo-skill please comply\n' },
+        { op: 'wait', text: 'skill demo-skill invoked' },
+        { op: 'wait', text: 'mock interactive response' },
+        { op: 'send', text: '/quit\n' },
+        { op: 'expect-exit', code: 0 },
+      ])
+      expect(output).toContain('unknown skill $nope')
+      expect(output).toContain('skill demo-skill invoked')
+      // The skill body reached the model request.
+      expect(server.requests.some(r => JSON.stringify(r.body).includes('SKILLED'))).toBe(true)
     } finally {
       await server.close()
       await rm(home, { recursive: true, force: true })
