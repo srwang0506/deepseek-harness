@@ -123,6 +123,7 @@ Keys:
   Ctrl+D                           quit and flush
   Esc                              toggle Vim normal mode (h/l, 0/$, w/b, x, D, i/a/I/A)
   Ctrl+U                           clear the composer line
+  Ctrl+R                           search the submitted prompt history
 
 Custom commands: $DSH_HOME/commands/<name>.md (prompt template, $ARGUMENTS placeholder).
 `)

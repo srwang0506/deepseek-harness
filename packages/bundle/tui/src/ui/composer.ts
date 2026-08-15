@@ -7,6 +7,7 @@
  * @module @deepseek-ai/dsh-tui/ui/composer
  */
 
+import { isPrintable } from './keys.ts'
 import type { KeyLike } from './keys.ts'
 
 /** The composer's editing state. */
@@ -41,18 +42,6 @@ export type ComposerResult =
   | { type: 'suggest-up' }
   | { type: 'suggest-down' }
   | { type: 'none' }
-
-/** Whether the key is a plain printable chunk (not a named/control key). */
-function isPrintable(keyInput: string, key: KeyLike): boolean {
-  return keyInput !== ''
-    && !key.ctrl
-    && !key.meta
-    && !key.tab
-    && !key.upArrow
-    && !key.downArrow
-    && !key.leftArrow
-    && !key.rightArrow
-}
 
 /** Clamp one cursor offset into 0..text.length. */
 function clamp(text: string, cursor: number): number {

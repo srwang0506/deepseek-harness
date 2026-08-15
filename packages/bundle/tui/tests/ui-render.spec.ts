@@ -133,6 +133,43 @@ describe('App', () => {
     expect(store.getSnapshot().picker?.selected).toBe(0)
   })
 
+  it('opens the history overlay with Ctrl+R, filters, and reuses a match', async () => {
+    const store = new UiStore()
+    const submitted: string[] = []
+    const { stdin, lastFrame } = render(h(App, { store, callbacks: callbacks({ onSubmit: (line) => { submitted.push(line) } }) }) )
+    await new Promise<void>((resolve) => { setImmediate(resolve) })
+    stdin.write('fix the bug\r')
+    await new Promise<void>((resolve) => { setImmediate(resolve) })
+    stdin.write('\x12')
+    await new Promise<void>((resolve) => { setImmediate(resolve) })
+    stdin.write('fix')
+    await new Promise<void>((resolve) => { setImmediate(resolve) })
+    expect(lastFrame() ?? '').toContain('history search: fix')
+    expect(lastFrame() ?? '').toContain('⏺ fix the bug')
+    stdin.write('\r')
+    await new Promise<void>((resolve) => { setImmediate(resolve) })
+    stdin.write('\r')
+    await new Promise<void>((resolve) => { setImmediate(resolve) })
+    expect(submitted).toEqual(['fix the bug', 'fix the bug'])
+  })
+
+  it('closes the history overlay with Esc', async () => {
+    const store = new UiStore()
+    const submitted: string[] = []
+    const { stdin, lastFrame } = render(h(App, { store, callbacks: callbacks({ onSubmit: (line) => { submitted.push(line) } }) }) )
+    await new Promise<void>((resolve) => { setImmediate(resolve) })
+    stdin.write('hello\r')
+    await new Promise<void>((resolve) => { setImmediate(resolve) })
+    stdin.write('\x12')
+    await new Promise<void>((resolve) => { setImmediate(resolve) })
+    stdin.write('\x1b')
+    await new Promise<void>((resolve) => { setImmediate(resolve) })
+    stdin.write('x')
+    await new Promise<void>((resolve) => { setImmediate(resolve) })
+    expect(lastFrame() ?? '').not.toContain('history search')
+    expect(submitted).toEqual(['hello'])
+  })
+
   it('shows suggestion rows above the input', () => {
     const store = new UiStore()
     const withSuggest = callbacks({ onSuggest: () => ['alpha.txt', 'beta.txt'] })

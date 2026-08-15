@@ -46,6 +46,11 @@ export type UiPrompt = PromptMode & {
   answer: (value: string | null) => void
 }
 
+/** One overlay the composer can open over the input area. */
+export type UiOverlay =
+  | { kind: 'history'; query: string; matches: readonly string[]; selected: number }
+  | { kind: 'files'; query: string; matches: readonly string[]; selected: number }
+
 /** The two-sided status bar: session facts left, model right (Codex-style). */
 export interface StatusInfo {
   /** Left side: sandbox mode, token usage, permission preset, plan mode. */
@@ -61,6 +66,7 @@ export interface UiState {
   running: boolean
   prompt: UiPrompt | undefined
   picker: UiPicker | undefined
+  overlay: UiOverlay | undefined
 }
 
 type Listener = () => void
@@ -71,7 +77,7 @@ type Listener = () => void
  * `useSyncExternalStore`.
  */
 export class UiStore {
-  private state: UiState = { items: [], status: { left: 'dsh', right: '' }, running: false, prompt: undefined, picker: undefined }
+  private state: UiState = { items: [], status: { left: 'dsh', right: '' }, running: false, prompt: undefined, picker: undefined, overlay: undefined }
   private listeners = new Set<Listener>()
   private nextKey = 1
 
@@ -143,6 +149,14 @@ export class UiStore {
    */
   setPicker(picker: UiPicker | undefined): void {
     this.publish({ ...this.state, picker })
+  }
+
+  /**
+   * Set, replace, or clear the composer overlay (history or file search).
+   * @param overlay - the overlay snapshot to show, or `undefined` to close it.
+   */
+  setOverlay(overlay: UiOverlay | undefined): void {
+    this.publish({ ...this.state, overlay })
   }
 
   /**

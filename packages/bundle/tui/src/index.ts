@@ -455,6 +455,7 @@ function helpText(): string {
     'Keys: Shift+Tab cycles the permission preset; Ctrl+P toggles plan mode; Ctrl+C cancels the turn.',
     'Keys: Ctrl+D quits and flushes; typed input during a run steers the agent at its next step.',
     'Keys: Esc toggles Vim normal mode (h/l, 0/$, w/b, x, D, i/a/I/A); Ctrl+U clears the line.',
+    'Keys: Ctrl+R searches the submitted prompt history; Enter reuses the selected line.',
     'A !-prefixed line runs a local shell command, e.g. !git status.',
     'A $name token invokes a skill, e.g. $demo-skill (skills load from $DSH_HOME/skills and .dsh/skills).',
     'Custom commands: $DSH_HOME/commands/<name>.md (prompt template with $ARGUMENTS).',

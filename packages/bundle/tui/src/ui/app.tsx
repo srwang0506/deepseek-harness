@@ -11,6 +11,7 @@ import { DiffView, MarkdownView } from './rich.tsx'
 import { keyIntent, pickerIntent } from './keys.ts'
 import { applyComposerKey, emptyEdit } from './composer.ts'
 import type { ComposerEdit } from './composer.ts'
+import { openHistoryOverlay, overlayKey } from './overlay.ts'
 
 /** Callbacks the app needs from the agent driver. */
 export interface AppCallbacks {
@@ -158,6 +159,19 @@ export function App({ store, callbacks }: { store: UiStore; callbacks: AppCallba
       }
       return
     }
+    if (state.overlay !== undefined) {
+      const next = overlayKey(state.overlay, keyInput, key, [...historyRef.current].reverse())
+      if (next === undefined) {
+        store.setOverlay(undefined)
+      } else if ('insert' in next) {
+        store.setOverlay(undefined)
+        editRef.current = { text: next.insert, cursor: next.insert.length, vim: 'insert' }
+        setEdit(editRef.current)
+      } else {
+        store.setOverlay(next)
+      }
+      return
+    }
     if (state.prompt !== undefined) {
       const intent = keyIntent(keyInput, key, state.prompt, promptTextRef.current)
       switch (intent.type) {
@@ -208,9 +222,11 @@ export function App({ store, callbacks }: { store: UiStore; callbacks: AppCallba
         callbacks.onSubmit(line)
         break
       }
-      case 'history-search':
-        // Ctrl+R opens the history search overlay (wired by the overlay rounds).
+      case 'history-search': {
+        const overlay = openHistoryOverlay(historyRef.current)
+        if (overlay !== undefined) store.setOverlay(overlay)
         break
+      }
       case 'quit':
         callbacks.onQuit()
         break
@@ -254,10 +270,14 @@ export function App({ store, callbacks }: { store: UiStore; callbacks: AppCallba
 
   // Keep the composer + status visible; the conversation shows its newest rows.
   const picker = state.picker
-  const suggestions = state.prompt === undefined && picker === undefined ? callbacks.onSuggest(edit.text, edit.cursor) : []
+  const overlay = state.overlay
+  const suggestions = state.prompt === undefined && picker === undefined && overlay === undefined
+    ? callbacks.onSuggest(edit.text, edit.cursor)
+    : []
   const pickerRows = picker === undefined ? 0 : 2 + Math.min(picker.items.length, 12)
+  const overlayRows = overlay === undefined ? 0 : 2 + Math.min(overlay.matches.length, 8)
   const composerRows = state.prompt === undefined ? Math.max(1, edit.text.split('\n').length) : 1
-  const visible = Math.max(0, rows - composerRows - 1 - Math.min(suggestions.length, 8) - pickerRows)
+  const visible = Math.max(0, rows - composerRows - 1 - Math.min(suggestions.length, 8) - pickerRows - overlayRows)
   const items = state.items.slice(-visible)
   const promptLine = state.prompt === undefined
     ? undefined
@@ -298,6 +318,14 @@ export function App({ store, callbacks }: { store: UiStore; callbacks: AppCallba
                   ? <Text key={index} bold>{suggestion}</Text>
                   : <Text key={index} color="grey">{suggestion}</Text>
               })}
+            </Box>
+          )}
+          {overlay !== undefined && (
+            <Box flexDirection="column">
+              <Box><Text bold>{overlay.kind === 'history' ? `history search: ${overlay.query}` : `file search: ${overlay.query}`} — ↑/↓ select · Enter reuse · Esc cancel</Text></Box>
+              {overlay.matches.map((match, index) => index === overlay.selected
+                ? <Box key={index}><Text bold>{`⏺ ${match}`}</Text></Box>
+                : <Box key={index}><Text color="grey">{`⏺ ${match}`}</Text></Box>)}
             </Box>
           )}
           {state.prompt === undefined

@@ -74,8 +74,13 @@ export function pickerIntent(keyInput: string, key: KeyLike): PickerIntent {
   return { type: 'none' }
 }
 
-/** Whether the key is a plain printable character (not a named/control key). */
-function isPrintable(keyInput: string, key: KeyLike): boolean {
+/**
+ * Whether the key is a plain printable character (not a named/control key).
+ * @param keyInput - the character (or paste) string, '' for named keys.
+ * @param key - the parsed key flags.
+ * @returns true for a printable chunk.
+ */
+export function isPrintable(keyInput: string, key: KeyLike): boolean {
   return keyInput !== ''
     && !key.ctrl
     && !key.meta

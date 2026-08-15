@@ -59,6 +59,14 @@ describe('UiStore', () => {
     store.dismissPrompt()
   })
 
+  it('holds a composer overlay snapshot and clears it', () => {
+    const store = new UiStore()
+    store.setOverlay({ kind: 'history', query: '', matches: ['one'], selected: 0 })
+    expect(store.getSnapshot().overlay).toEqual({ kind: 'history', query: '', matches: ['one'], selected: 0 })
+    store.setOverlay(undefined)
+    expect(store.getSnapshot().overlay).toBeUndefined()
+  })
+
   it('holds a session picker snapshot and clears it', () => {
     const store = new UiStore()
     const items = [{ id: 's1', title: 'First', cwd: '/tmp/a', createdAt: 1, live: false }]

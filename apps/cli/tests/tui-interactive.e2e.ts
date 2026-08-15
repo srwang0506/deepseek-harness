@@ -382,6 +382,52 @@ describe.skipIf(process.platform === 'win32')('tui interactive REPL (real Loader
     }
   }, LOADER_SMOKE_TEST_TIMEOUT_MS)
 
+  it('searches the submitted prompt history with Ctrl+R and reuses a line', async () => {
+    const apiKey = 'tui-history-key'
+    const home = join(await mkdtemp(join(tmpdir(), 'dsh-tui-home-')), '.dsh')
+    const server = await startMockLlmServer({
+      sequence: ['success'],
+      repeatLast: true,
+      apiKey,
+      successText: 'mock interactive response',
+    })
+    try {
+      const output = await runTuiPty({
+        DSH_HOME: home,
+        DEEPSEEK_API_KEY: apiKey,
+        DEEPSEEK_BASE_URL: server.baseURL,
+        DSH_TELEMETRY_DISABLED: '1',
+        NO_COLOR: '1',
+      }, [
+        { op: 'wait', text: 'dsh' },
+        { op: 'wait', text: 'deepseek-official' },
+        { op: 'send', text: 'first message\n' },
+        { op: 'wait', text: 'mock interactive response' },
+        { op: 'send', text: 'second message\n' },
+        { op: 'wait', text: 'mock interactive response', occurrences: 2 },
+        { op: 'ctrl', char: 'r' },
+        { op: 'wait', text: 'history search: ' },
+        { op: 'send', text: 'first' },
+        // Conversation echo + the overlay row: two occurrences so far.
+        { op: 'wait', text: 'first message', occurrences: 2 },
+        { op: 'send', text: '\n' },
+        // The reused line lands in the composer: one more occurrence.
+        { op: 'wait', text: 'first message', occurrences: 3 },
+        { op: 'send', text: '\n' },
+        { op: 'wait', text: 'mock interactive response', occurrences: 3 },
+        { op: 'send', text: '/quit\n' },
+        { op: 'expect-exit', code: 0 },
+      ])
+      expect(output).toContain('history search: first')
+      // The reused line is the third request body.
+      expect(server.requests.length).toBeGreaterThanOrEqual(3)
+      expect(JSON.stringify(server.requests[2]?.body)).toContain('first message')
+    } finally {
+      await server.close()
+      await rm(home, { recursive: true, force: true })
+    }
+  }, LOADER_SMOKE_TEST_TIMEOUT_MS)
+
   it('runs multiple turns, echoes Chinese input, and flushes sessions on Ctrl+D', async () => {
     const apiKey = 'tui-multiturn-key'
     const home = join(await mkdtemp(join(tmpdir(), 'dsh-tui-home-')), '.dsh')
