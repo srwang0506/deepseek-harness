@@ -162,6 +162,7 @@ Examples:
   dsh login                                   log into the optional OpenAI GPT provider
   dsh model gpt                               select an OpenAI GPT default model
   dsh status                                  show the OpenAI GPT login state
+  dsh login status                            alias of: dsh status
   dsh doctor                                  check environment and credentials
   dsh provider add anthropic --api-key-env ANTHROPIC_API_KEY
   dsh provider add gateway --api-key-env GATEWAY_KEY --base-url https://gateway.example/v1 --model gpt-4o
@@ -318,7 +319,7 @@ export function parseDshArgs(argv: readonly string[], version: string): DshInvoc
 
   const login = program.command('login').description('log into the optional OpenAI GPT provider')
   login
-    .argument('[method]', 'browser, device, or api-key; prompted when omitted')
+    .argument('[method]', 'browser, device, api-key, or status; prompted when omitted')
     .action((method: string | undefined) => {
       rejectParentOptions('login')
       resolved = { mode: 'login', method }

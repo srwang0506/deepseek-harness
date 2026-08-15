@@ -48,6 +48,11 @@ switch (invocation.mode) {
     break
   }
   case 'login': {
+    if (invocation.method === 'status') {
+      const { openAiStatus } = await import('./openai.ts')
+      await openAiStatus()
+      break
+    }
     const { loginOpenAi } = await import('./openai.ts')
     await loginOpenAi(invocation.method)
     break

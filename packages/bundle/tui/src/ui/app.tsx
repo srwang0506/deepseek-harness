@@ -223,20 +223,20 @@ export function App({ store, callbacks }: { store: UiStore; callbacks: AppCallba
     }
   })
 
-  // Keep the status + input visible; the conversation shows its newest rows.
+  // Keep the composer + status visible; the conversation shows its newest rows.
   const picker = state.picker
-  const visible = Math.max(0, picker === undefined ? rows - 3 : rows - 4 - Math.min(picker.items.length, 12))
-  const items = state.items.slice(-visible)
   const suggestions = state.prompt === undefined && picker === undefined ? callbacks.onSuggest(input, input.length) : []
+  const pickerRows = picker === undefined ? 0 : 2 + Math.min(picker.items.length, 12)
+  const visible = Math.max(0, rows - 4 - Math.min(suggestions.length, 8) - pickerRows)
+  const items = state.items.slice(-visible)
   const promptLine = state.prompt === undefined
     ? `> ${input}`
     : state.prompt.kind === 'choice'
-      ? `${state.prompt.question} `
+      ? state.prompt.question
       : `${state.prompt.question} ${promptText}`
 
   return (
     <Box flexDirection="column" height={rows}>
-      <Box><Text bold>{state.status || 'dsh'}{state.running ? ' …' : ''}</Text></Box>
       <Box flexDirection="column" flexGrow={1}>
         {items.map(item => <Box key={item.key}>{renderRow(item)}</Box>)}
       </Box>
@@ -265,7 +265,10 @@ export function App({ store, callbacks }: { store: UiStore; callbacks: AppCallba
               })}
             </Box>
           )}
-          <Text>{promptLine}</Text>
+          <Box borderStyle="round" borderColor={state.running ? 'yellow' : 'grey'}>
+            <Text>{promptLine}</Text>
+          </Box>
+          <Box><Text color="grey" dimColor>{state.status || 'dsh'}{state.running ? ' …' : ''}</Text></Box>
         </Box>
       )}
     </Box>

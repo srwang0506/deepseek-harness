@@ -29,7 +29,10 @@ import type {} from '@deepseek-ai/dsh-session-query'
 import type {} from '@deepseek-ai/cordis-plugin-loader'
 import type {} from '@deepseek-ai/dsh-cmdline'
 import type {} from '@deepseek-ai/dsh-user-approval'
+import { effectiveApprovalPolicy } from '@deepseek-ai/dsh-user-approval'
+import type { ApprovalPolicy } from '@deepseek-ai/dsh-user-approval'
 import type { ApprovalOutcome } from '@deepseek-ai/dsh-user-approval/types'
+import { effectiveSandboxMode } from '@deepseek-ai/dsh-sandbox-policy'
 import type {} from '@deepseek-ai/dsh-user-questions'
 import type { AskUserQuestionAnswer, AskUserQuestionItem, AskUserQuestionOption } from '@deepseek-ai/dsh-user-questions'
 import { assertSupportedJsonSchema, validateJsonSchemaValue } from '@deepseek-ai/dsh-tools'
@@ -437,7 +440,8 @@ function helpText(): string {
     '  /sessions         list persisted sessions',
     '  /fork             fork the current session from its latest event',
     '  /delete [id]      delete a persisted session',
-    '  /status           show model, session, cwd, and login state',
+    '  /status           show session state: model, sandbox, approval, usage',
+    '  /permissions      show the permission presets, or switch (e.g. /permissions accept-edits)',
     '  /compact          compact the session history',
     '  /init             write an AGENTS.md template',
     '  /doctor           check environment and credentials',
@@ -717,9 +721,12 @@ function togglePlanMode(ctx: Context, agent: Agent | undefined, store: UiStore):
   store.push({ kind: 'info', text: `plan mode ${active ? 'off' : 'on'}` })
 }
 
-/** The status-bar text: model, permission preset, and plan mode. */
-function statusText(selection: ModelSelection, ctx: Context, agent: Agent): string {
+/** The status-bar text: model, sandbox mode, permission preset, and plan mode. */
+function statusText(selection: ModelSelection, ctx: Context, agent: Agent, launchOverride: boolean): string {
   const parts = [`${selection.provider}/${selection.model}${selection.reasoningEffort === undefined ? '' : ` (${selection.reasoningEffort})`}`]
+  if (launchOverride) parts.push('-m')
+  const sandbox = ctx.get('sandboxPolicy')?.resolve({ session: agent.session }).mode
+  if (sandbox !== undefined) parts.push(`sandbox ${sandbox}`)
   const meter = ctx.get('tokenMeter')
   if (meter !== undefined) parts.push(`${meter.measure(agent.session).totalTokens} tokens`)
   const presets = ctx.get('permissionPresets')
@@ -727,6 +734,109 @@ function statusText(selection: ModelSelection, ctx: Context, agent: Agent): stri
   const planMode = ctx.get('planMode')
   if (planMode !== undefined && planMode.get(agent).active) parts.push('plan')
   return parts.join(' · ')
+}
+
+/** The stored OpenAI GPT credential state, for the /status login row. */
+type LoginState = 'oauth' | 'api-key' | 'none'
+
+/** The live facts that render one /status view. */
+export interface SessionStatusInput {
+  /** The live session id. */
+  sessionId: string
+  /** The provider/model route in effect for the next request. */
+  model: string
+  /** The selected reasoning effort, or undefined for provider default. */
+  reasoningEffort?: string | undefined
+  /** The model override applied at this launch (`-m`), when present. */
+  launchOverride: boolean
+  /** The session working directory. */
+  cwd: string
+  /** The effective sandbox mode. */
+  sandbox: string
+  /** The workspace-write root the sandbox resolves. */
+  sandboxRoot: string
+  /** Whether the sandbox mode is a session override or the deployment default. */
+  sandboxOverridden: boolean
+  /** The effective approval policy. */
+  approval: ApprovalPolicy
+  /** The permission preset name matching the effective knobs. */
+  preset: string
+  /** Every switchable preset name. */
+  presets: readonly string[]
+  /** Committed session events. */
+  events: number
+  /** Current request-and-response token pressure. */
+  tokens: number
+  /** Total heuristic tokens across the current surface. */
+  surfaceTokens: number
+  /** The stored OpenAI GPT credential state. */
+  login: LoginState
+}
+
+/**
+ * The /status view rows for the live session: identity, model, sandbox,
+ * approval, and usage — everything a session policy decision needs.
+ * @param input - the live session facts.
+ * @returns one row per line.
+ */
+export function sessionStatusRows(input: SessionStatusInput): string[] {
+  const rows = [
+    `session ${input.sessionId}`,
+    `model ${input.model}${input.reasoningEffort === undefined ? '' : ` (reasoning ${input.reasoningEffort})`}`,
+  ]
+  if (input.launchOverride) rows.push(`model override: ${input.model} (from -m; this launch only)`)
+  rows.push(`cwd ${input.cwd}`)
+  rows.push(`sandbox ${input.sandbox}${input.sandboxOverridden ? ' (session override)' : ' (default)'} — workspace ${input.sandboxRoot}`)
+  rows.push(`approval ${input.approval}`)
+  rows.push(`permissions ${input.preset} (available: ${input.presets.join(', ')})`)
+  rows.push(`events ${input.events} · ${input.tokens} tokens (surface ${input.surfaceTokens})`)
+  rows.push(input.login === 'oauth'
+    ? 'OpenAI 已通过 ChatGPT OAuth 登录'
+    : input.login === 'api-key'
+      ? 'OpenAI 已通过 API Key 登录'
+      : 'OpenAI 尚未登录')
+  return rows
+}
+
+/** One advertised preset option in the /permissions view. */
+export interface PermissionOptionInput {
+  /** The preset value a switch accepts. */
+  value: string
+  /** The display label. */
+  name: string
+  /** One user-facing sentence on what the preset means. */
+  description?: string
+}
+
+/** The effective policy facts that render one /permissions view. */
+export interface PermissionViewInput {
+  /** The preset matching the session's effective knobs. */
+  current: string
+  /** The default preset for future sessions. */
+  defaultPreset: string
+  /** Every advertised preset option, in declaration order. */
+  options: readonly PermissionOptionInput[]
+}
+
+/**
+ * The /permissions view rows: the session's effective policy, the switchable
+ * presets, and the two grant scopes — one-time prompt answers versus the
+ * durable session policy.
+ * @param input - the effective policy facts.
+ * @returns one row per line.
+ */
+export function permissionRows(input: PermissionViewInput): string[] {
+  const rows = [
+    'permissions — session policy',
+    `  current: ${input.current} (default for new sessions: ${input.defaultPreset})`,
+  ]
+  for (const option of input.options) {
+    const mark = option.value === input.current ? '*' : ' '
+    rows.push(`  ${mark} ${option.name}${option.description === undefined ? '' : ` — ${option.description}`}`)
+  }
+  rows.push('one-time: answer a prompt (y/n) to allow or reject that operation only')
+  rows.push('session:  /permissions <preset> switches the policy for this session (persisted; restored on resume)')
+  return rows
 }
 
 /** Collect every file diff a tool recorded in this session, in log order. */
@@ -765,7 +875,7 @@ function registerCustomCommands(ctx: Context): void {
 
 /** The built-in slash-command names plus every registry command. */
 function slashNames(ctx: Context, agent: Agent): string[] {
-  const names = new Set(['new', 'fork', 'delete', 'resume', 'model', 'reasoning', 'login', 'logout', 'sessions', 'status', 'compact', 'init', 'doctor', 'export', 'diff', 'review', 'undo', 'help', 'quit', 'exit'])
+  const names = new Set(['new', 'fork', 'delete', 'resume', 'model', 'reasoning', 'permissions', 'login', 'logout', 'sessions', 'status', 'compact', 'init', 'doctor', 'export', 'diff', 'review', 'undo', 'help', 'quit', 'exit'])
   const commands = ctx.get('commands')
   if (commands !== undefined) {
     for (const descriptor of commands.list(agent)) names.add(descriptor.name)
@@ -905,7 +1015,7 @@ async function runInteractive(ctx: Context, config: Config, exit: (code: number)
 
   const refreshStatus = (): void => {
     const agent = controller.live()
-    if (agent !== undefined) store.setStatus(statusText(selection, ctx, agent))
+    if (agent !== undefined) store.setStatus(statusText(selection, ctx, agent, config.model !== ''))
   }
 
   let quitResolve: (() => void) | undefined
@@ -1070,20 +1180,58 @@ async function runInteractive(ctx: Context, config: Config, exit: (code: number)
         }
         case 'status': {
           const context = agent.session.requestContext()
-          store.push({ kind: 'info', text: `session ${agent.id}` })
-          store.push({ kind: 'info', text: `model ${context?.provider ?? selection.provider}/${context?.model ?? selection.model}` })
-          store.push({ kind: 'info', text: `cwd ${process.cwd()}` })
-          store.push({ kind: 'info', text: `events ${agent.session.seq}` })
+          const sandbox = ctx.get('sandboxPolicy')?.resolve({ session: agent.session })
+          const presets = ctx.get('permissionPresets')
+          const approval = ctx.get('approval')
+          const meter = ctx.get('tokenMeter')
+          const measurement = meter === undefined ? undefined : meter.measure(agent.session)
           const credentials = new PiAiCredentialStore(dshHomePath('pi-ai-auth.json'))
           const credential = await credentials.read('openai-codex')
-          store.push({
-            kind: 'info',
-            text: credential?.type === 'oauth'
-              ? 'OpenAI 已通过 ChatGPT OAuth 登录'
-              : credential?.type === 'api_key'
-                ? 'OpenAI 已通过 API Key 登录'
-                : 'OpenAI 尚未登录',
-          })
+          for (const row of sessionStatusRows({
+            sessionId: agent.id,
+            model: `${context?.provider ?? selection.provider}/${context?.model ?? selection.model}`,
+            reasoningEffort: selection.reasoningEffort,
+            launchOverride: config.model !== '',
+            cwd: process.cwd(),
+            sandbox: sandbox?.mode ?? 'unknown',
+            sandboxRoot: sandbox?.workspaceRoot ?? process.cwd(),
+            sandboxOverridden: effectiveSandboxMode(agent.session.events) !== undefined,
+            approval: effectiveApprovalPolicy(agent.session.events) ?? approval?.config.policy ?? 'ask',
+            preset: presets === undefined ? 'unknown' : presets.current(agent.session.events),
+            presets: presets === undefined ? [] : presets.names,
+            events: agent.session.seq,
+            tokens: measurement?.totalTokens ?? 0,
+            surfaceTokens: measurement?.surfaceTokens ?? 0,
+            login: credential?.type === 'oauth' ? 'oauth' : credential?.type === 'api_key' ? 'api-key' : 'none',
+          })) {
+            store.push({ kind: 'info', text: row })
+          }
+          return
+        }
+        case 'permissions': {
+          const presets = ctx.get('permissionPresets')
+          if (presets === undefined) {
+            store.push({ kind: 'error', text: 'permission presets are not mounted' })
+            return
+          }
+          const name = slash.args.trim()
+          if (name === '') {
+            for (const row of permissionRows({
+              current: presets.current(agent.session.events),
+              defaultPreset: presets.defaultPreset,
+              options: presets.names.map(preset => presets.optionOf(preset)),
+            })) {
+              store.push({ kind: 'info', text: row })
+            }
+            return
+          }
+          if (!presets.names.includes(name)) {
+            store.push({ kind: 'error', text: `unknown preset "${name}" (available: ${presets.names.join(', ')})` })
+            return
+          }
+          presets.set(agent.session, name)
+          store.push({ kind: 'info', text: `permission preset set to ${name} (session policy; restored on resume)` })
+          refreshStatus()
           return
         }
         case 'init': {

@@ -283,6 +283,54 @@ describe.skipIf(process.platform === 'win32')('tui interactive REPL (real Loader
     }
   }, LOADER_SMOKE_TEST_TIMEOUT_MS)
 
+  it('shows /status, switches the permission preset, and persists the policy', async () => {
+    const apiKey = 'tui-status-key'
+    const home = join(await mkdtemp(join(tmpdir(), 'dsh-tui-home-')), '.dsh')
+    const server = await startMockLlmServer({
+      sequence: ['success'],
+      repeatLast: true,
+      apiKey,
+      successText: 'mock interactive response',
+    })
+    try {
+      const output = await runTuiPty({
+        DSH_HOME: home,
+        DEEPSEEK_API_KEY: apiKey,
+        DEEPSEEK_BASE_URL: server.baseURL,
+        DSH_TELEMETRY_DISABLED: '1',
+        NO_COLOR: '1',
+      }, [
+        { op: 'wait', text: '>' },
+        { op: 'wait', text: 'deepseek-official' },
+        { op: 'wait', text: 'sandbox workspace-write' },
+        { op: 'send', text: '/status\n' },
+        { op: 'wait', text: 'approval ask' },
+        { op: 'wait', text: 'permissions workspace-write (available: read-only, workspace-write, danger-full-access)' },
+        { op: 'send', text: '/permissions\n' },
+        { op: 'wait', text: 'one-time: answer a prompt (y/n)' },
+        { op: 'send', text: '/permissions read-only\n' },
+        { op: 'wait', text: 'permission preset set to read-only' },
+        { op: 'wait', text: 'sandbox read-only' },
+        { op: 'send', text: '/quit\n' },
+        { op: 'expect-exit', code: 0 },
+      ], ['-m', 'deepseek-chat'])
+      expect(output).toContain('session ')
+      expect(output).toContain('model deepseek-official/deepseek-chat')
+      expect(output).toContain('cwd ')
+      expect(output).toContain('permissions — session policy')
+      // The launch override is marked in the status bar and the /status view.
+      expect(output).toContain('model override: deepseek-official/deepseek-chat (from -m; this launch only)')
+      expect(output).toContain('-m')
+      // The switch is durable: the knob events persist with the session.
+      const persisted = await persistedSessions(home)
+      expect(persisted).toContain('sandbox/mode')
+      expect(persisted).toContain('permission/preset')
+    } finally {
+      await server.close()
+      await rm(home, { recursive: true, force: true })
+    }
+  }, LOADER_SMOKE_TEST_TIMEOUT_MS)
+
   it('runs multiple turns, echoes Chinese input, and flushes sessions on Ctrl+D', async () => {
     const apiKey = 'tui-multiturn-key'
     const home = join(await mkdtemp(join(tmpdir(), 'dsh-tui-home-')), '.dsh')

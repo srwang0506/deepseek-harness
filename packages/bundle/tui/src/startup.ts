@@ -105,7 +105,8 @@ Interactive commands:
   /new                             start a fresh session
   /resume [id]                     list sessions, or resume the given id
   /model [model]                   show the model, or switch it
-  /status                          show model, session, and cwd
+  /status                          show session state: model, sandbox, approval, usage
+  /permissions                     show the permission presets, or switch
   /compact                         compact the session history
   /init                            write an AGENTS.md template
   /doctor                          check environment and credentials

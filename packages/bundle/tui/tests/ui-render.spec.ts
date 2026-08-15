@@ -51,7 +51,7 @@ describe('DiffView', () => {
 })
 
 describe('App', () => {
-  it('renders the status bar, conversation, and input line', () => {
+  it('renders the composer box, conversation, and the status bar beneath it', () => {
     const store = new UiStore()
     store.setStatus('deepseek-official/deepseek-v4-flash')
     store.push({ kind: 'assistant', text: 'hello' })
@@ -59,6 +59,19 @@ describe('App', () => {
     const frame = lastFrame() ?? ''
     expect(frame).toContain('deepseek-v4-flash')
     expect(frame).toContain('hello')
+    // Codex layout: the status bar sits below the conversation, inside a bordered composer.
+    expect(frame.indexOf('deepseek-v4-flash')).toBeGreaterThan(frame.indexOf('hello'))
+    expect(frame).toContain('╭')
+  })
+
+  it('renders typed input inside the bordered composer', async () => {
+    const store = new UiStore()
+    const { stdin, lastFrame } = render(h(App, { store, callbacks: callbacks() }))
+    // Ink attaches its stdin listener in a passive effect; give it a tick.
+    await new Promise<void>((resolve) => { setImmediate(resolve) })
+    stdin.write('fix the bug')
+    await new Promise<void>((resolve) => { setImmediate(resolve) })
+    expect(lastFrame() ?? '').toContain('fix the bug')
   })
 
   it('renders the session picker overlay with a highlighted row', () => {

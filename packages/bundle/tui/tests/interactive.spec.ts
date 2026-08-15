@@ -40,7 +40,7 @@ describe('replayEventToStore', () => {
   })
 })
 
-import { extractSkillInvocations, promptApproval, promptQuestions, restoreSessionSelection } from '../src/index.ts'
+import { extractSkillInvocations, permissionRows, promptApproval, promptQuestions, restoreSessionSelection, sessionStatusRows } from '../src/index.ts'
 import { ReasoningEffortId } from '@deepseek-ai/dsh-llm'
 import { Context } from '@deepseek-ai/cordis'
 import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
@@ -62,6 +62,85 @@ function answerPrompt<T>(pending: Promise<T>, store: UiStore, value: string | nu
   })()
   return pending
 }
+
+describe('sessionStatusRows', () => {
+  const base = {
+    sessionId: 'session-live',
+    model: 'deepseek-official/deepseek-v4-flash',
+    launchOverride: false,
+    cwd: '/work/repo',
+    sandbox: 'read-only',
+    sandboxRoot: '/work/repo',
+    sandboxOverridden: false,
+    approval: 'ask' as const,
+    preset: 'ask',
+    presets: ['ask', 'accept-edits'] as readonly string[],
+    events: 12,
+    tokens: 340,
+    surfaceTokens: 200,
+    login: 'none' as const,
+  }
+
+  it('reports identity, model, sandbox, approval, and usage rows', () => {
+    const rows = sessionStatusRows({ ...base, reasoningEffort: 'high', launchOverride: true, sandboxOverridden: true, login: 'oauth' })
+    expect(rows).toEqual([
+      'session session-live',
+      'model deepseek-official/deepseek-v4-flash (reasoning high)',
+      'model override: deepseek-official/deepseek-v4-flash (from -m; this launch only)',
+      'cwd /work/repo',
+      'sandbox read-only (session override) — workspace /work/repo',
+      'approval ask',
+      'permissions ask (available: ask, accept-edits)',
+      'events 12 · 340 tokens (surface 200)',
+      'OpenAI 已通过 ChatGPT OAuth 登录',
+    ])
+  })
+
+  it('reports default sandbox and the api-key login state', () => {
+    const rows = sessionStatusRows({ ...base, approval: 'never', login: 'api-key' })
+    expect(rows[3]).toBe('sandbox read-only (default) — workspace /work/repo')
+    expect(rows[4]).toBe('approval never')
+    expect(rows.at(-1)).toBe('OpenAI 已通过 API Key 登录')
+    expect(rows).not.toContain('model override:')
+  })
+
+  it('reports the signed-out state and an empty preset list', () => {
+    const rows = sessionStatusRows({ ...base, preset: 'custom', presets: [], events: 0, tokens: 0, surfaceTokens: 0 })
+    expect(rows.at(-1)).toBe('OpenAI 尚未登录')
+    expect(rows).toContain('permissions custom (available: )')
+    expect(rows).toContain('events 0 · 0 tokens (surface 0)')
+  })
+})
+
+describe('permissionRows', () => {
+  it('marks the current preset and lists every option with its description', () => {
+    const rows = permissionRows({
+      current: 'accept-edits',
+      defaultPreset: 'ask',
+      options: [
+        { value: 'ask', name: 'Ask', description: 'approve every operation' },
+        { value: 'accept-edits', name: 'Accept edits', description: 'auto-accept low-risk edits' },
+      ],
+    })
+    expect(rows).toEqual([
+      'permissions — session policy',
+      '  current: accept-edits (default for new sessions: ask)',
+      '    Ask — approve every operation',
+      '  * Accept edits — auto-accept low-risk edits',
+      'one-time: answer a prompt (y/n) to allow or reject that operation only',
+      'session:  /permissions <preset> switches the policy for this session (persisted; restored on resume)',
+    ])
+  })
+
+  it('omits the description dash when an option has none', () => {
+    const rows = permissionRows({
+      current: 'ask',
+      defaultPreset: 'ask',
+      options: [{ value: 'ask', name: 'Ask' }],
+    })
+    expect(rows).toContain('  * Ask')
+  })
+})
 
 describe('extractSkillInvocations', () => {
   it('collects unique kebab-case names in first-appearance order', () => {
