@@ -2,14 +2,15 @@
 
 English | [中文](README.zh.md)
 
-The `dsh` command is an interactive Codex-style coding terminal client, plus the launcher for profiles: ordered stacks of plugin-bundle patch layers under the user's own overrides. Bare `dsh` starts the terminal client (the `tui` profile), `dsh "task"` runs one task, and `dsh web` serves the browser UI. [`src/args.ts`](src/args.ts) owns the command grammar, and [`src/bin.ts`](src/bin.ts) loads only the selected runner. Invalid commands, options from another mode, configuration errors, and boot failures exit nonzero.
+The `dsh` command is an interactive Codex-style coding terminal client, plus the launcher for profiles: ordered stacks of plugin-bundle patch layers under the user's own overrides. Bare `dsh` starts the terminal client (the `tui` profile), `dsh exec "task"` runs one task and exits, and `dsh web` serves the browser UI. [`src/args.ts`](src/args.ts) owns the command grammar, and [`src/bin.ts`](src/bin.ts) loads only the selected runner. Invalid commands, options from another mode, configuration errors, and boot failures exit nonzero.
 
 ## Entry modes
 
 | Command | Purpose |
 |---|---|
 | `dsh` | Start the interactive terminal client (the default `tui` profile). |
-| `dsh "job"` | Answer one task, print the final answer, and exit. |
+| `dsh exec "job"` | Answer one task, print the final answer, and exit (one-shot). |
+| `dsh "job"` | Alias of `dsh exec "job"`. |
 | `dsh --profile <name>` | Boot the named profile under `$DSH_HOME/profiles/<name>`. |
 | `dsh --profile headless "job"` | Run one fresh persisted session, print the final answer, and exit. |
 | `dsh web` | Alias of `--profile web`. |

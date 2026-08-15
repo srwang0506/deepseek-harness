@@ -24,11 +24,11 @@
 
 | Profile | 参数 |
 |---|---|
-| `tui` | 任务位置参数（存在时为一次性模式）、`--resume <id>`、`--continue`、`-m`/`--model <model>` |
+| `tui` | 任务位置参数（存在时为一次性模式，规范入口为 `dsh exec`）、`--resume <id>`、`--continue`、`-m`/`--model <model>` |
 | `web` | `--host`、`--port`、可重复的 `--trusted-host` |
 | `headless` | 任务文本，作为位置参数 |
 
-裸 `dsh` 打开交互式终端客户端：一个全屏 Ink 客户端，流式打印会话事件（assistant 文本、reasoning、工具调用与带 diff 着色的结果），行内回答审批/提问，并处理 `/new`、`/resume [id]`、`/sessions`、`/model [model]`、`/status`、`/compact`、`/init`、`/doctor`、`/export`、`/diff`、`/undo`、`/help`、`/quit` 这些斜杠命令。`dsh --resume <id>`（或 `dsh --continue`）续跑持久化会话，并在提示符前重放其转录。带任务位置参数时，`dsh "任务"` 以一次性模式运行同一 runner：打印最终文本并退出。没有任务且 stdin 非终端时，以 1 退出并给出用法诊断。
+裸 `dsh` 打开交互式终端客户端：一个全屏 Ink 客户端，流式打印会话事件（assistant 文本、reasoning、工具调用与带 diff 着色的结果），以封闭的 y/n 选项行内回答审批，以预设编号、键入的自定义答案或多行自由文本行内回答提问，并处理 `/new`、`/resume [id]`、`/sessions`、`/model [model]`、`/status`、`/compact`、`/init`、`/doctor`、`/export`、`/diff`、`/undo`、`/help`、`/quit`、`/exit` 这些斜杠命令。`dsh --resume <id>`（或 `dsh --continue`）续跑持久化会话，并在提示符前重放其转录。第一次 Ctrl+C 只取消当前轮次；Ctrl+D（与 `/quit`、`/exit` 一样）退出并 flush；轮次运行中提交的一行会在下一步边界引导 Agent。带任务位置参数时，`dsh exec "任务"`（裸 `dsh "任务"` 为别名）以一次性模式运行同一 runner：打印最终文本并退出。没有任务且 stdin 非终端时，以 1 退出并给出用法诊断。
 
 一次性任务（`dsh --profile headless "run the tests"`）通过核心注册表创建一个全新的持久化 Agent（智能体），提交任务、等待完全停稳并对会话执行 flush，再从其持久化事件区间中推导最后一个非空 assistant 文本与最终 `turn/end` 原因。它在 stdout 打印文本，并在原因为 `completed` 时以 0 退出，否则以 1 退出。没有任务的调用是该应用的用法错误。随附 headless profile 不挂载 ApiProxy、Host、HTTP 服务器、Web 运行时或浏览器客户端；成功运行不会向 stderr 写入任何内容，也不会打开监听端口。
 

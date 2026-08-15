@@ -144,7 +144,8 @@ const collect = (value: string, previous: string[] = []): string[] => [...previo
 const HELP_EXAMPLES = `
 Examples:
   dsh                                         start the interactive terminal client
-  dsh "run the tests"                         answer one task and exit
+  dsh exec "run the tests"                    answer one task and exit (one-shot)
+  dsh "run the tests"                         alias of: dsh exec "run the tests"
   dsh web                                     boot the web UI (same as: dsh --profile web)
   dsh --profile <name> ...                    boot any named profile
   dsh --profile web --help                    the web app's own flags and help
@@ -254,6 +255,24 @@ export function parseDshArgs(argv: readonly string[], version: string): DshInvoc
     .action((args: string[], options: BootOptions) => {
       rejectParentOptions('web')
       resolved = resolveBoot(web, 'web', options, args)
+    })
+
+  const exec = program.command('exec').description('answer one task and exit; the terminal app\'s own flags follow (--json, --jsonl, --resume, -m, -i, --ephemeral)')
+  exec
+    .helpOption(false)
+    .allowUnknownOption()
+    .passThroughOptions()
+    .enablePositionalOptions()
+    .argument('[task...]', 'the one-shot task text')
+    .option('--patch <path>', 'extra patch-list overlay applied after the profile layer (repeatable)', collect)
+    .option('--dump-config', 'print the composed tui-profile tree (with the user layer and any --patch) and exit')
+    .option('--dump-default-config', 'print the tui profile\'s bundle layers (no user layer) and exit')
+    .action((args: string[], options: BootOptions) => {
+      rejectParentOptions('exec')
+      if (args.length === 0 && options.dumpConfig !== true && options.dumpDefaultConfig !== true) {
+        program.error('error: exec needs a task, e.g. dsh exec "run the tests"')
+      }
+      resolved = resolveBoot(exec, 'tui', options, args)
     })
 
   const plugin = program.command('plugin').description('manage a profile\'s plugins by forwarding the remaining arguments to pnpm in the profile directory')

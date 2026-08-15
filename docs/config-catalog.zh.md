@@ -2819,6 +2819,34 @@ export type ToolPresentationMode = 'native' | 'code' | 'both'
 
 来源：[`packages/core/tools/src/index.ts:654`](../packages/core/tools/src/index.ts)
 
+<a id="deepseek-aidsh-tui"></a>
+
+## `@deepseek-ai/dsh-tui`
+
+需要：`agentDefaultModel` · `agents` · `sessions`
+
+```ts config-catalog
+/** Plugin config, resolved from the ordinary tuiStartup provider. */
+export interface Config {
+  /** One-shot task text; empty string means interactive mode. */
+  task: string
+  /** Resume session id; empty string means a fresh session. */
+  resumeSessionId: string
+  /** Resume the most recent session. */
+  continue: boolean
+  /** `--model` override; empty string means the configured default. */
+  model: string
+  /** One-shot output format: plain text, a final JSON object, or streaming JSONL. */
+  output: 'text' | 'json' | 'jsonl'
+  /** Image files attached to the first user message (png/jpeg/webp/gif). */
+  images: string[]
+  /** Delete the persisted session after a one-shot run. */
+  ephemeral: boolean
+}
+```
+
+Source: [`packages/bundle/tui/src/index.ts:62`](../packages/bundle/tui/src/index.ts)
+
 <a id="deepseek-aidsh-typert-loader"></a>
 
 ## `@deepseek-ai/dsh-typert-loader`

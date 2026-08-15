@@ -2,14 +2,15 @@
 
 [English](README.md) | 中文
 
-`dsh` 是一个 Codex 式的交互式编码终端客户端，同时也是启动 profile 的命令；profile 由多个插件组合包 patch 层按顺序叠加而成，其上再应用用户自己的覆盖配置。裸 `dsh` 启动终端客户端（`tui` profile），`dsh "任务"` 执行一个任务，`dsh web` 启动浏览器 UI。[`src/args.ts`](src/args.ts) 负责命令语法，[`src/bin.ts`](src/bin.ts) 只加载选中的运行器。无效命令、来自其他模式的选项、配置错误和启动失败都会以非零状态退出。
+`dsh` 是一个 Codex 式的交互式编码终端客户端，同时也是启动 profile 的命令；profile 由多个插件组合包 patch 层按顺序叠加而成，其上再应用用户自己的覆盖配置。裸 `dsh` 启动终端客户端（`tui` profile），`dsh exec "任务"` 执行一个任务并退出，`dsh web` 启动浏览器 UI。[`src/args.ts`](src/args.ts) 负责命令语法，[`src/bin.ts`](src/bin.ts) 只加载选中的运行器。无效命令、来自其他模式的选项、配置错误和启动失败都会以非零状态退出。
 
 ## 入口模式
 
 | 命令 | 用途 |
 |---|---|
 | `dsh` | 启动交互式终端客户端（默认的 `tui` profile）。 |
-| `dsh "job"` | 回答一个任务，打印最终答案并退出。 |
+| `dsh exec "job"` | 回答一个任务，打印最终答案并退出（一次性模式）。 |
+| `dsh "job"` | `dsh exec "job"` 的别名。 |
 | `dsh --profile <name>` | 启动位于 `$DSH_HOME/profiles/<name>` 的指定 profile。 |
 | `dsh --profile headless "job"` | 运行一个全新的持久化会话，打印最终答案并退出。 |
 | `dsh web` | `--profile web` 的别名。 |

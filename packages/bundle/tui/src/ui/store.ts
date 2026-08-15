@@ -4,6 +4,8 @@
  * @module @deepseek-ai/dsh-tui/ui/store
  */
 
+import type { PromptMode } from './keys.ts'
+
 /** One rendered conversation row. */
 export interface UiItem {
   /** Monotonic per-store key. */
@@ -15,13 +17,11 @@ export interface UiItem {
 }
 
 /** An approval or question awaiting a terminal answer. */
-export interface UiPrompt {
+export type UiPrompt = PromptMode & {
   /** The question line. */
   question: string
-  /** Accepted single-character keys (plus Enter). */
-  choices: readonly string[]
-  /** The result sink. */
-  answer: (key: string | null) => void
+  /** The result sink; null means the human dismissed the prompt. */
+  answer: (value: string | null) => void
 }
 
 /** The whole renderable UI snapshot. */
@@ -104,5 +104,17 @@ export class UiStore {
    */
   setPrompt(prompt: UiPrompt | undefined): void {
     this.publish({ ...this.state, prompt })
+  }
+
+  /**
+   * Resolve the pending prompt with a null dismissal if one is open, so a
+   * turn cancellation cannot leave the prompt hanging or its question line on
+   * screen.
+   */
+  dismissPrompt(): void {
+    const prompt = this.state.prompt
+    if (prompt === undefined) return
+    this.publish({ ...this.state, prompt: undefined })
+    prompt.answer(null)
   }
 }

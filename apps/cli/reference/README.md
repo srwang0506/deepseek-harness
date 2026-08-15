@@ -24,11 +24,11 @@ The shipped apps own these command lines:
 
 | Profile | Arguments |
 |---|---|
-| `tui` | the task positional (one-shot when present), `--resume <id>`, `--continue`, `-m`/`--model <model>` |
+| `tui` | the task positional (one-shot when present, canonically via `dsh exec`), `--resume <id>`, `--continue`, `-m`/`--model <model>` |
 | `web` | `--host`, `--port`, repeatable `--trusted-host` |
 | `headless` | the task text, as the positional argument |
 
-Bare `dsh` opens the interactive terminal client: a full-screen Ink client that streams session events (assistant text, reasoning, tool calls, and diff-colored results), answers approval/questions inline, and handles the slash commands `/new`, `/resume [id]`, `/sessions`, `/model [model]`, `/status`, `/compact`, `/init`, `/doctor`, `/export`, `/diff`, `/undo`, `/help`, and `/quit`. `dsh --resume <id>` (or `dsh --continue`) resumes a persisted session and replays its transcript before the prompt. With a task positional, `dsh "task"` runs the same runner in one-shot mode: print the final text and exit. With no task and a non-terminal stdin, it exits 1 with a usage diagnostic.
+Bare `dsh` opens the interactive terminal client: a full-screen Ink client that streams session events (assistant text, reasoning, tool calls, and diff-colored results), answers approvals inline as a closed y/n choice and questions as preset numbers, typed custom answers, or multi-line free text, and handles the slash commands `/new`, `/resume [id]`, `/sessions`, `/model [model]`, `/status`, `/compact`, `/init`, `/doctor`, `/export`, `/diff`, `/undo`, `/help`, `/quit`, and `/exit`. `dsh --resume <id>` (or `dsh --continue`) resumes a persisted session and replays its transcript before the prompt. The first Ctrl+C cancels only the running turn; Ctrl+D (like `/quit` and `/exit`) quits and flushes; a line submitted while a turn runs steers the agent at its next step boundary. With a task positional, `dsh exec "task"` (bare `dsh "task"` is an alias) runs the same runner in one-shot mode: print the final text and exit. With no task and a non-terminal stdin, it exits 1 with a usage diagnostic.
 
 A one-shot task (`dsh --profile headless "run the tests"`) creates one fresh persisted Agent through the core registry, submits the task, waits for quiescence, and flushes the Session before deriving the last non-empty assistant text and final `turn/end` reason from its durable interval. It prints the text on stdout and exits 0 for `completed`, else 1. An invocation with no task is a usage error from that app. The shipped headless profile mounts no ApiProxy, Host, HTTP server, Web runtime, or browser client; a successful run writes nothing to stderr and opens no listening port.
 

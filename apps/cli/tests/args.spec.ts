@@ -55,6 +55,19 @@ describe('parseDshArgs', () => {
       .toEqual({ mode: 'profile', profile: 'tui', patches: ['a.yml'], args: ['--resume', 'b', '--patch', 'late.yml'] })
   })
 
+  it('routes the exec one-shot subcommand into the tui profile', () => {
+    expect(parse(['exec', 'run', 'the', 'tests']))
+      .toEqual({ mode: 'profile', profile: 'tui', patches: [], args: ['run', 'the', 'tests'] })
+    expect(parse(['exec', '--json', 'run', 'the', 'tests']))
+      .toEqual({ mode: 'profile', profile: 'tui', patches: [], args: ['--json', 'run', 'the', 'tests'] })
+    expect(parse(['exec', '--patch', 'a.yml', 'hi']))
+      .toEqual({ mode: 'profile', profile: 'tui', patches: ['a.yml'], args: ['hi'] })
+    expect(parse(['exec', '--dump-config']))
+      .toEqual({ mode: 'dump-config', profile: 'tui', defaultOnly: false, patches: [] })
+    expect(() => parse(['exec'])).toThrow()
+    expect(exitCode(['exec'])).toBe(1)
+  })
+
   it('routes the plugin pnpm forwarder', () => {
     expect(parse(['plugin', '--profile', 'tui', 'add', 'turtle-ui']))
       .toEqual({ mode: 'plugin', profile: 'tui', args: ['add', 'turtle-ui'] })

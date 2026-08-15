@@ -1069,6 +1069,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'one header per materialized session.',
       },
       {
+        signature: 'abstract delete(id: SessionId): Promise<void>',
+        description: 'Durably remove one stored session\'s complete artifact and all coordinator-side records. Refuses while the session is live.',
+        parameters: [{ name: 'id', description: 'persisted session id to remove.' }],
+        returns: 'completion after the backend removal is durable.',
+      },
+      {
         signature: 'abstract listSnapshots(signal?: AbortSignal): Promise<SessionPersistenceSnapshot[]>',
         description: 'List materialized sessions with cheap per-log change tokens.\n\nRepeated observations of an unchanged log return the same revision. A successful mutating load repair changes the next listed revision. Revisions also distinguish independently backed stores so backend-local counters cannot compare equal across different persistence sources.',
         parameters: [{ name: 'signal', description: 'optional cancellation for backend snapshot-listing work.' }],

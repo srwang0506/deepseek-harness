@@ -367,6 +367,14 @@ abstract readFrom(id: SessionId, fromSeq: number, signal?: AbortSignal): Promise
 abstract list(signal?: AbortSignal): Promise<SessionHeader[]>
 
 /**
+ * Durably remove one stored session's complete artifact and all
+ * coordinator-side records. Refuses while the session is live.
+ * @param id - persisted session id to remove.
+ * @returns completion after the backend removal is durable.
+ */
+abstract delete(id: SessionId): Promise<void>
+
+/**
  * List materialized sessions with cheap per-log change tokens.
  *
  * Repeated observations of an unchanged log return the same revision. A

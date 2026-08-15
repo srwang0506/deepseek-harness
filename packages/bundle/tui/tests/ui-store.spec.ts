@@ -29,9 +29,42 @@ describe('UiStore', () => {
 
   it('holds a pending prompt and clears it', () => {
     const store = new UiStore()
-    store.setPrompt({ question: 'Allow?', choices: ['y', 'n'], answer: () => {} })
+    store.setPrompt({ kind: 'choice', question: 'Allow?', choices: ['y', 'n'], answer: () => {} })
     expect(store.getSnapshot().prompt?.question).toBe('Allow?')
     store.setPrompt(undefined)
     expect(store.getSnapshot().prompt).toBeUndefined()
+  })
+
+  it('setStatus publishes the status bar text', () => {
+    const store = new UiStore()
+    store.setStatus('p/m · 42 tokens')
+    expect(store.getSnapshot().status).toBe('p/m · 42 tokens')
+  })
+
+  it('setRunning publishes the running flag', () => {
+    const store = new UiStore()
+    store.setRunning(true)
+    expect(store.getSnapshot().running).toBe(true)
+    store.setRunning(false)
+    expect(store.getSnapshot().running).toBe(false)
+  })
+
+  it('dismissPrompt clears a pending prompt, answers null, and tolerates none pending', () => {
+    const store = new UiStore()
+    let answered: string | null | undefined
+    store.setPrompt({ kind: 'text', question: 'Which?', choices: [], multiLine: false, answer: (value) => { answered = value } })
+    store.dismissPrompt()
+    expect(store.getSnapshot().prompt).toBeUndefined()
+    expect(answered).toBeNull()
+    store.dismissPrompt()
+  })
+
+  it('unsubscribes listeners', () => {
+    const store = new UiStore()
+    const seen: number[] = []
+    const off = store.subscribe(() => { seen.push(1) })
+    off()
+    store.push({ kind: 'info', text: 'x' })
+    expect(seen).toEqual([])
   })
 })

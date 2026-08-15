@@ -49,6 +49,7 @@
     "commander": "^15.0.0",
     "diff": "^9.0.0",
     "@deepseek-ai/dsh-code-runtime-worker-thread": "workspace:^",
+    "@deepseek-ai/dsh-tool-ask-user": "workspace:^",
     "ink": "^5.0.0"
   },
   "peerDependencies": {

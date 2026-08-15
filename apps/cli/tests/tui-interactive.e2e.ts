@@ -4,22 +4,40 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { execa } from 'execa'
 import { describe, expect, it } from 'vitest'
+import { Context } from '@deepseek-ai/cordis'
 import { LOADER_SMOKE_TEST_TIMEOUT_MS, resolveExampleLaunch } from '@deepseek-ai/dsh-loader-smoke'
 import { startMockLlmServer } from '@deepseek-ai/dsh-llm-mock-server'
+import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
+import JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
 
 const dshBinScript = fileURLToPath(new URL('../src/bin.ts', import.meta.url))
 const tsconfigPath = fileURLToPath(new URL('../../../tsconfig.json', import.meta.url))
 
-/** Drive a bare `dsh` REPL in a PTY: prompt, stream, then `/quit`. */
+/** One driver step: wait for output, sleep, send text/control bytes, or expect an exit code. */
+type PtyStep =
+  | { op: 'wait'; text: string; occurrences?: number }
+  | { op: 'sleep'; seconds: number }
+  | { op: 'send'; text: string }
+  | { op: 'ctrl'; char: string }
+  | { op: 'expect-exit'; code: number }
+
+/**
+ * Drive a bare `dsh` REPL in a PTY through a step list, printing the whole
+ * transcript on every failure. The last step is usually `expect-exit`, which
+ * also asserts the process's final exit code.
+ */
 const POSIX_TUI_PTY_DRIVER = String.raw`
-import errno, json, os, pty, select, signal, sys, time
-node, launch_args_json, launch_env_json, cwd, timeout_seconds = sys.argv[1:]
+import errno, fcntl, json, os, pty, select, signal, struct, sys, termios, time
+node, launch_args_json, launch_env_json, cwd, timeout_seconds, steps_json = sys.argv[1:]
 env = os.environ.copy()
 env.update(json.loads(launch_env_json))
 pid, fd = pty.fork()
 if pid == 0:
     os.chdir(cwd)
     os.execvpe(node, [node, *json.loads(launch_args_json)], env)
+# Pin a real terminal size: a fresh pty inherits no winsize and a 0-row
+# surface makes the Ink layout render nothing.
+fcntl.ioctl(fd, termios.TIOCSWINSZ, struct.pack("HHHH", 30, 120, 0, 0))
 
 output = bytearray()
 deadline = time.monotonic() + float(timeout_seconds)
@@ -36,14 +54,15 @@ def pump():
         if chunk:
             output.extend(chunk)
 
-def wait_for(marker):
-    while marker not in output:
+def wait_for(marker, occurrences):
+    marker = marker.encode("utf-8")
+    while output.count(marker) < occurrences:
         if time.monotonic() >= deadline:
             return False
         pump()
         waited, candidate = os.waitpid(pid, os.WNOHANG)
         if waited == pid:
-            return marker in output
+            return output.count(marker) >= occurrences
     return True
 
 def wait_exit():
@@ -55,32 +74,66 @@ def wait_exit():
             return None
         pump()
 
-banner_ok = wait_for(b"/help")
-if banner_ok:
-    os.write(fd, b"hello\n")
-response_ok = banner_ok and wait_for(b"mock interactive response")
-if response_ok:
-    os.write(fd, b"/quit\n")
-status = wait_exit()
+exit_code = 0
+for step in json.loads(steps_json):
+    op = step["op"]
+    if op == "wait":
+        if not wait_for(step["text"], int(step.get("occurrences", 1))):
+            sys.stdout.buffer.write(output)
+            sys.stderr.write("timed out waiting for %r\n" % step["text"])
+            os.kill(pid, signal.SIGKILL)
+            sys.exit(124)
+    elif op == "sleep":
+        time.sleep(step["seconds"])
+        pump()
+    elif op == "send":
+        # One character per write, waiting for each key's rendered echo
+        # before the next: the harness child can stall for seconds under
+        # load, and keys written blindly coalesce into one chunk that Ink's
+        # parseKeypress consumes as a single keypress (the trailing Enter
+        # would be lost). The echo is a re-rendered frame, i.e. output growth.
+        text = step["text"]
+        keys = [*text]
+        for index, char in enumerate(keys):
+            payload = "\r" if char == "\n" else char
+            before = len(output)
+            os.write(fd, payload.encode("utf-8"))
+            echo_deadline = time.monotonic() + 10
+            while len(output) <= before and time.monotonic() < echo_deadline:
+                pump()
+                waited, candidate = os.waitpid(pid, os.WNOHANG)
+                if waited == pid:
+                    break
+            # A settled render replaces the input line; the CR's own echo is
+            # the cleared prompt, which also grows the buffer.
+            settle = 0.1 if char != "\n" else 0.4
+            settle_deadline = time.monotonic() + settle
+            while time.monotonic() < settle_deadline:
+                pump()
+    elif op == "ctrl":
+        # The control byte for Ctrl+<char>, e.g. 'c' -> 0x03, 'd' -> 0x04.
+        os.write(fd, bytes([ord(step["char"]) & 0x1F]))
+    elif op == "expect-exit":
+        exit_code = step["code"]
+        break
+    else:
+        sys.stderr.write("unknown step %s\n" % op)
+        os.kill(pid, signal.SIGKILL)
+        sys.exit(126)
 
+status = wait_exit()
 sys.stdout.buffer.write(output)
-if not banner_ok:
-    sys.stderr.write("no banner before timeout\n")
-    sys.exit(124)
-if not response_ok:
-    sys.stderr.write("no streamed response before timeout\n")
-    sys.exit(124)
 if status is None:
     os.kill(pid, signal.SIGKILL)
-    sys.stderr.write("did not exit after /quit\n")
+    sys.stderr.write("process did not exit after the final step\n")
     sys.exit(124)
 actual_exit = os.waitstatus_to_exitcode(status)
-if actual_exit != 0:
-    sys.stderr.write(f"expected exit 0, got {actual_exit}\n")
+if actual_exit != exit_code:
+    sys.stderr.write("expected exit %d, got %d\n" % (exit_code, actual_exit))
     sys.exit(125)
 `
 
-async function runTuiPty(env: Record<string, string>): Promise<string> {
+async function runTuiPty(env: Record<string, string>, steps: readonly PtyStep[]): Promise<string> {
   const cwd = await mkdtemp(join(tmpdir(), 'dsh-tui-interactive-'))
   const launch = resolveExampleLaunch({
     srcBin: dshBinScript,
@@ -89,7 +142,7 @@ async function runTuiPty(env: Record<string, string>): Promise<string> {
     env,
   })
   try {
-    const timeoutMs = 30_000
+    const timeoutMs = 80_000
     const result = await execa('python3', [
       '-c',
       POSIX_TUI_PTY_DRIVER,
@@ -98,6 +151,7 @@ async function runTuiPty(env: Record<string, string>): Promise<string> {
       JSON.stringify(launch.env),
       cwd,
       String(timeoutMs / 1_000),
+      JSON.stringify(steps),
     ], {
       stdin: 'ignore',
       timeout: timeoutMs + 5_000,
@@ -117,6 +171,24 @@ async function runTuiPty(env: Record<string, string>): Promise<string> {
   }
 }
 
+/**
+ * Every persisted session's decoded log under a DSH_HOME, concatenated,
+ * read through the official jsonl backend's `readRaw` seam.
+ */
+async function persistedSessions(dshHome: string): Promise<string> {
+  const ctx = new Context()
+  await ctx.plugin(SessionStore)
+  await ctx.plugin(JsonlSessionPersistence, { root: join(dshHome, 'sessions') })
+  const persistence = ctx.sessionPersistence
+  const collected: string[] = []
+  for (const header of await persistence.list()) {
+    const raw = await persistence.readRaw(SessionId(header.id))
+    if (raw !== undefined) collected.push(raw.content)
+  }
+  await ctx.fiber.dispose()
+  return collected.join('\n')
+}
+
 describe.skipIf(process.platform === 'win32')('tui interactive REPL (real Loader tree in a PTY)', () => {
   it('streams a response and quits with /quit', async () => {
     const apiKey = 'tui-interactive-key'
@@ -133,12 +205,184 @@ describe.skipIf(process.platform === 'win32')('tui interactive REPL (real Loader
         DEEPSEEK_BASE_URL: server.baseURL,
         DSH_TELEMETRY_DISABLED: '1',
         NO_COLOR: '1',
-      })
+      }, [
+        { op: 'wait', text: '>' },
+        { op: 'wait', text: 'deepseek-official' },
+        { op: 'send', text: 'hello\n' },
+        { op: 'wait', text: 'mock interactive response' },
+        { op: 'send', text: '/quit\n' },
+        { op: 'expect-exit', code: 0 },
+      ])
       expect(output).toContain('dsh')
-      expect(output).toContain('/help')
+      expect(output).toContain('>')
       expect(output).toContain('mock interactive response')
     } finally {
       await server.close()
+    }
+  }, LOADER_SMOKE_TEST_TIMEOUT_MS)
+
+  it('runs multiple turns, echoes Chinese input, and flushes sessions on Ctrl+D', async () => {
+    const apiKey = 'tui-multiturn-key'
+    const home = join(await mkdtemp(join(tmpdir(), 'dsh-tui-home-')), '.dsh')
+    const server = await startMockLlmServer({
+      sequence: ['success'],
+      repeatLast: true,
+      apiKey,
+      successText: 'mock interactive response',
+    })
+    try {
+      const output = await runTuiPty({
+        DSH_HOME: home,
+        DEEPSEEK_API_KEY: apiKey,
+        DEEPSEEK_BASE_URL: server.baseURL,
+        DSH_TELEMETRY_DISABLED: '1',
+        NO_COLOR: '1',
+      }, [
+        { op: 'wait', text: '>' },
+        { op: 'wait', text: 'deepseek-official' },
+        { op: 'send', text: '你好，请记住这句话\n' },
+        { op: 'wait', text: 'mock interactive response' },
+        { op: 'send', text: 'second message\n' },
+        { op: 'wait', text: 'mock interactive response', occurrences: 2 },
+        { op: 'ctrl', char: 'd' },
+        { op: 'expect-exit', code: 0 },
+      ])
+      expect(output).toContain('你好，请记住这句话')
+      expect(server.requests.length).toBeGreaterThanOrEqual(2)
+      expect(server.requests.some(r => JSON.stringify(r.body).includes('你好，请记住这句话'))).toBe(true)
+      expect(server.requests.some(r => JSON.stringify(r.body).includes('second message'))).toBe(true)
+      // Ctrl+D must flush: both user messages are durably persisted.
+      const persisted = await persistedSessions(home)
+      expect(persisted).toContain('你好，请记住这句话')
+      expect(persisted).toContain('second message')
+    } finally {
+      await server.close()
+      await rm(home, { recursive: true, force: true })
+    }
+  }, LOADER_SMOKE_TEST_TIMEOUT_MS)
+
+  it('answers a preset question with typed custom text', async () => {
+    const apiKey = 'tui-question-key'
+    const home = join(await mkdtemp(join(tmpdir(), 'dsh-tui-home-')), '.dsh')
+    const server = await startMockLlmServer({
+      sequence: ['tool_call_success', 'success'],
+      repeatLast: true,
+      apiKey,
+      successText: 'mock interactive response',
+      toolName: 'ask_user_question',
+      toolArguments: JSON.stringify({
+        questions: [{
+          id: 'color',
+          question: 'Which color do you want?',
+          options: [{ label: 'red' }, { label: 'blue' }],
+        }],
+      }),
+    })
+    try {
+      const output = await runTuiPty({
+        DSH_HOME: home,
+        DEEPSEEK_API_KEY: apiKey,
+        DEEPSEEK_BASE_URL: server.baseURL,
+        DSH_TELEMETRY_DISABLED: '1',
+        NO_COLOR: '1',
+      }, [
+        { op: 'wait', text: '>' },
+        { op: 'wait', text: 'deepseek-official' },
+        { op: 'send', text: 'pick a color\n' },
+        { op: 'wait', text: '1. red' },
+        { op: 'send', text: 'sunset orange\n' },
+        { op: 'wait', text: 'mock interactive response' },
+        { op: 'send', text: '/quit\n' },
+        { op: 'expect-exit', code: 0 },
+      ])
+      expect(output).toContain('sunset orange')
+      // The typed custom answer reaches the model as the tool result.
+      expect(server.requests.some(r => JSON.stringify(r.body).includes('sunset orange'))).toBe(true)
+    } finally {
+      await server.close()
+      await rm(home, { recursive: true, force: true })
+    }
+  }, LOADER_SMOKE_TEST_TIMEOUT_MS)
+
+  it('allows an approval with y', async () => {
+    const apiKey = 'tui-approval-key'
+    const home = join(await mkdtemp(join(tmpdir(), 'dsh-tui-home-')), '.dsh')
+    const server = await startMockLlmServer({
+      sequence: ['tool_call_success', 'success'],
+      repeatLast: true,
+      apiKey,
+      successText: 'mock interactive response',
+      toolName: 'bash',
+      // The sandbox-escalation retry is the terminal's approval prompt: the
+      // requested mode strictly widens workspace-write, so the call pauses
+      // on the approval seam before anything executes.
+      toolArguments: JSON.stringify({
+        command: 'echo approval-granted',
+        description: 'print the approval grant marker',
+        sandbox_permissions: 'danger-full-access',
+        justification: 'the interactive test asks for one approval',
+      }),
+    })
+    try {
+      const output = await runTuiPty({
+        DSH_HOME: home,
+        DEEPSEEK_API_KEY: apiKey,
+        DEEPSEEK_BASE_URL: server.baseURL,
+        DSH_TELEMETRY_DISABLED: '1',
+        NO_COLOR: '1',
+      }, [
+        { op: 'wait', text: '>' },
+        { op: 'wait', text: 'deepseek-official' },
+        { op: 'send', text: 'run a shell command\n' },
+        { op: 'wait', text: 'Run bash' },
+        { op: 'send', text: 'y' },
+        { op: 'wait', text: 'mock interactive response' },
+        { op: 'send', text: '/quit\n' },
+        { op: 'expect-exit', code: 0 },
+      ])
+      expect(output).toContain('approval-granted')
+      expect(server.requests.length).toBeGreaterThanOrEqual(2)
+    } finally {
+      await server.close()
+      await rm(home, { recursive: true, force: true })
+    }
+  }, LOADER_SMOKE_TEST_TIMEOUT_MS)
+
+  it('Ctrl+C cancels only the running turn, then keeps the session usable', async () => {
+    const apiKey = 'tui-cancel-key'
+    const home = join(await mkdtemp(join(tmpdir(), 'dsh-tui-home-')), '.dsh')
+    const server = await startMockLlmServer({
+      sequence: ['slow_success', 'success'],
+      repeatLast: true,
+      apiKey,
+      successText: 'slow-marker ' + 'x'.repeat(2048),
+      chunkDelayMs: 80,
+    })
+    try {
+      const output = await runTuiPty({
+        DSH_HOME: home,
+        DEEPSEEK_API_KEY: apiKey,
+        DEEPSEEK_BASE_URL: server.baseURL,
+        DSH_TELEMETRY_DISABLED: '1',
+        NO_COLOR: '1',
+      }, [
+        { op: 'wait', text: '>' },
+        { op: 'wait', text: 'deepseek-official' },
+        { op: 'send', text: 'start a slow turn\n' },
+        { op: 'wait', text: 'slow-marker' },
+        { op: 'ctrl', char: 'c' },
+        { op: 'wait', text: '(interrupted)' },
+        { op: 'send', text: 'after interrupt\n' },
+        { op: 'wait', text: 'slow-marker', occurrences: 2 },
+        { op: 'send', text: '/quit\n' },
+        { op: 'expect-exit', code: 0 },
+      ])
+      expect(output).toContain('slow-marker')
+      expect(output).toContain('(interrupted)')
+      expect(server.requests.length).toBeGreaterThanOrEqual(2)
+    } finally {
+      await server.close()
+      await rm(home, { recursive: true, force: true })
     }
   }, LOADER_SMOKE_TEST_TIMEOUT_MS)
 })

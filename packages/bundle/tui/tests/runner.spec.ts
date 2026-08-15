@@ -104,7 +104,7 @@ describe('tui runner (one-shot)', () => {
       },
     })
     const result = await test.run()
-    expect(result).toEqual({ code: 0, out: 'final answer\n', err: '', order: ['flush', 'exit'] })
+    expect(result).toEqual({ code: 0, out: 'final answer\n', err: '', order: ['flush', 'flush', 'exit'] })
     await test.ctx.fiber.dispose()
   })
 

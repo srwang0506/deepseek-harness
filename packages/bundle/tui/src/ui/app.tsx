@@ -14,6 +14,8 @@ import { keyIntent } from './keys.ts'
 export interface AppCallbacks {
   /** Submit one command line. */
   onSubmit: (line: string) => void
+  /** Quit and flush (Ctrl+D, /quit, /exit). */
+  onQuit: () => void
   /** Cycle the permission preset (Shift+Tab). */
   onCycleApproval: () => void
   /** Toggle plan mode (Ctrl+P). */
@@ -61,7 +63,7 @@ function renderRow(item: UiItem): React.ReactNode {
 /**
  * The terminal app. Reads the store snapshot with `useSyncExternalStore` and
  * owns the input line; key handling routes prompts, submission, completion,
- * and the approval/plan toggles.
+ * quitting, and the approval/plan toggles.
  */
 export function App({ store, callbacks }: { store: UiStore; callbacks: AppCallbacks }): React.JSX.Element {
   const state = useSyncExternalStore(store.subscribe, store.getSnapshot)
@@ -101,12 +103,18 @@ export function App({ store, callbacks }: { store: UiStore; callbacks: AppCallba
   }
 
   useInput((keyInput, key) => {
-    const intent = keyIntent(keyInput, key, state.prompt !== undefined, state.prompt?.choices ?? [])
+    const intent = keyIntent(keyInput, key, state.prompt, promptTextRef.current)
     switch (intent.type) {
-      case 'prompt-submit': {
+      case 'prompt-return': {
         const value = promptTextRef.current
+        if (state.prompt?.kind === 'text' && state.prompt.multiLine
+          && value !== '' && !value.endsWith('\n')) {
+          setPromptText(value + '\n')
+          break
+        }
+        const text = value.trim()
         setPromptText('')
-        state.prompt?.answer(value)
+        state.prompt?.answer(text === '' ? null : text)
         break
       }
       case 'prompt-answer':
@@ -115,6 +123,9 @@ export function App({ store, callbacks }: { store: UiStore; callbacks: AppCallba
         break
       case 'prompt-text':
         setPromptText(previous => intent.text === '\b' ? previous.slice(0, -1) : previous + intent.text)
+        break
+      case 'quit':
+        callbacks.onQuit()
         break
       case 'submit': {
         const line = inputRef.current
@@ -164,6 +175,14 @@ export function App({ store, callbacks }: { store: UiStore; callbacks: AppCallba
         historyIndexRef.current = -1
         setInput(previous => previous + intent.text)
         break
+      case 'append-and-submit': {
+        const line = inputRef.current + intent.text
+        setInput('')
+        historyRef.current = [...historyRef.current, line]
+        historyIndexRef.current = -1
+        callbacks.onSubmit(line)
+        break
+      }
       case 'none':
         break
     }
@@ -175,9 +194,9 @@ export function App({ store, callbacks }: { store: UiStore; callbacks: AppCallba
   const suggestions = state.prompt === undefined ? callbacks.onSuggest(input, input.length) : []
   const promptLine = state.prompt === undefined
     ? `> ${input}`
-    : state.prompt.choices.length === 0
-      ? `${state.prompt.question} ${promptText}`
-      : `${state.prompt.question} `
+    : state.prompt.kind === 'choice'
+      ? `${state.prompt.question} `
+      : `${state.prompt.question} ${promptText}`
 
   return (
     <Box flexDirection="column" height={rows}>

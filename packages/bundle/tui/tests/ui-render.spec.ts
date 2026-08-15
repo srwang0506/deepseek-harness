@@ -13,6 +13,7 @@ afterEach(() => { cleanup() })
 function callbacks(overrides: Partial<AppCallbacks> = {}): AppCallbacks {
   return {
     onSubmit: () => {},
+    onQuit: () => {},
     onCycleApproval: () => {},
     onTogglePlan: () => {},
     onComplete: () => undefined,

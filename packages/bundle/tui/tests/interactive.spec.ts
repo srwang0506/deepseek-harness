@@ -39,3 +39,92 @@ describe('replayEventToStore', () => {
     ])
   })
 })
+
+import { promptApproval, promptQuestions } from '../src/index.ts'
+
+/**
+ * Drive a prompt flow: answer every prompt it opens with the same value until
+ * the pending promise settles, so multi-question requests complete.
+ */
+function answerPrompt<T>(pending: Promise<T>, store: UiStore, value: string | null): Promise<T> {
+  void (async () => {
+    for (;;) {
+      await Promise.resolve()
+      const prompt = store.getSnapshot().prompt
+      if (prompt === undefined) break
+      prompt.answer(value)
+      // A macro-task turn lets the question loop open its next prompt.
+      await new Promise<void>((resolve) => { setTimeout(resolve, 0) })
+    }
+  })()
+  return pending
+}
+
+describe('promptApproval', () => {
+  it('maps y to allowed-once, n to rejected, and a dismissal to cancelled', async () => {
+    const allow = new UiStore()
+    await expect(answerPrompt(promptApproval(allow, 'echo', undefined), allow, 'y')).resolves.toBe('allowed-once')
+    expect(allow.getSnapshot().prompt).toBeUndefined()
+
+    const reject = new UiStore()
+    await expect(answerPrompt(promptApproval(reject, 'echo', undefined), reject, 'n')).resolves.toBe('rejected')
+    expect(reject.getSnapshot().prompt).toBeUndefined()
+
+    const dismiss = new UiStore()
+    await expect(answerPrompt(promptApproval(dismiss, 'echo', 'unsafe'), dismiss, null)).resolves.toBe('cancelled')
+    expect(dismiss.getSnapshot().prompt).toBeUndefined()
+  })
+})
+
+describe('promptQuestions', () => {
+  it('selects a preset option by number', async () => {
+    const store = new UiStore()
+    const pending = promptQuestions(store, [
+      { id: 'pick', question: 'Pick one', options: [{ label: 'alpha' }, { label: 'beta' }] },
+    ])
+    await expect(answerPrompt(pending, store, '2')).resolves.toEqual({
+      answers: [{ id: 'pick', selected: ['beta'] }],
+    })
+  })
+
+  it('accepts a typed custom answer instead of a preset', async () => {
+    const store = new UiStore()
+    const pending = promptQuestions(store, [
+      { id: 'pick', question: 'Pick one', options: [{ label: 'alpha' }, { label: 'beta' }] },
+    ])
+    await expect(answerPrompt(pending, store, 'something else')).resolves.toEqual({
+      answers: [{ id: 'pick', selected: [], custom: 'something else' }],
+    })
+  })
+
+  it('combines preset numbers with typed text for multi-select', async () => {
+    const store = new UiStore()
+    const pending = promptQuestions(store, [
+      { id: 'many', question: 'Pick several', multiSelect: true, options: [{ label: 'alpha' }, { label: 'beta' }, { label: 'gamma' }] },
+    ])
+    await expect(answerPrompt(pending, store, '1, 3 keep the blue one')).resolves.toEqual({
+      answers: [{ id: 'many', selected: ['alpha', 'gamma'], custom: 'keep the blue one' }],
+    })
+  })
+
+  it('takes multi-line free text for option-free questions', async () => {
+    const store = new UiStore()
+    const pending = promptQuestions(store, [
+      { id: 'free', question: 'Describe it' },
+    ])
+    await expect(answerPrompt(pending, store, 'first line\nsecond line')).resolves.toEqual({
+      answers: [{ id: 'free', selected: [], custom: 'first line\nsecond line' }],
+    })
+  })
+
+  it('records an empty answer as no selection when the prompt is dismissed', async () => {
+    const store = new UiStore()
+    const pending = promptQuestions(store, [
+      { id: 'pick', question: 'Pick one', options: [{ label: 'alpha' }] },
+      { id: 'free', question: 'Describe it' },
+    ])
+    await expect(answerPrompt(pending, store, null)).resolves.toEqual({
+      answers: [{ id: 'pick', selected: [] }, { id: 'free', selected: [] }],
+    })
+  })
+})

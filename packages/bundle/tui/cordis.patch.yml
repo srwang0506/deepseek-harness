@@ -25,6 +25,12 @@
     - id: code-runtime
       name: '@deepseek-ai/dsh-code-runtime-worker-thread'
 
+    # The model-facing question tool. The TUI composition has no agent
+    # presets, so the Consumer row that presets normally supply mounts here;
+    # the terminal answers it through the tui-runner's registered provider.
+    - id: tool-ask-user
+      name: '@deepseek-ai/dsh-tool-ask-user'
+
     - id: tui-startup
       name: '@deepseek-ai/dsh-tui/startup'
 

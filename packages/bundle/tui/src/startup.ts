@@ -71,10 +71,11 @@ function tuiCommand(): Command {
     .addHelpText('after', `
 Examples:
   dsh                              start an interactive session
-  dsh "run the tests"              answer one task and exit
-  dsh --json "run the tests"       one task, JSON result on stdout
-  dsh --jsonl "run the tests"      one task, streamed JSONL events
-  dsh -i shot.png "fix this UI"    one task with an attached image
+  dsh exec "run the tests"         answer one task and exit (one-shot)
+  dsh "run the tests"              alias of: dsh exec "run the tests"
+  dsh exec --json "run the tests"  one task, JSON result on stdout
+  dsh exec --jsonl "run the tests" one task, streamed JSONL events
+  dsh exec -i shot.png "fix this UI"  one task with an attached image
   dsh --resume <session-id>        resume an earlier session interactively
   dsh --continue                   resume the most recent session
   dsh -m deepseek-chat "hi"        one task with a specific model
@@ -97,6 +98,7 @@ Keys:
   Shift+Tab                        cycle the permission preset
   Ctrl+P                           toggle plan mode
   Ctrl+C                           cancel the running turn
+  Ctrl+D                           quit and flush
 
 Custom commands: $DSH_HOME/commands/<name>.md (prompt template, $ARGUMENTS placeholder).
 `)

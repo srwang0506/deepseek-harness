@@ -7,7 +7,7 @@
  */
 
 /** The launcher-owned subcommands, in declaration order. */
-const COMMANDS = ['login', 'model', 'status', 'logout', 'doctor', 'provider', 'providers', 'plugin', 'web', 'completion', 'help']
+const COMMANDS = ['login', 'model', 'status', 'logout', 'doctor', 'provider', 'providers', 'plugin', 'web', 'exec', 'completion', 'help']
 
 /**
  * Print the completion script for one shell.

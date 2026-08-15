@@ -1,38 +1,37 @@
 /**
  * @deepseek-ai/dsh-tui — the Codex-style terminal client. The bundle patch
- * rides over dsh-base without Host, HTTP, or browser plugins. One-shot mode (a
- * task positional) creates one Agent, drives it to quiescence, and prints the
- * final text; interactive mode mounts a full-screen Ink UI that streams
- * session events, answers approval/questions inline, and handles slash
- * commands.
+ * rides over dsh-base without Host, HTTP, or browser plugins. One-shot mode
+ * (a task positional, reached via `dsh exec`) creates one Agent, drives it to
+ * quiescence, and prints the final text; interactive mode mounts a full-screen
+ * Ink UI that streams session events, answers approval/questions inline, and
+ * handles slash commands. Both modes share one
+ * {@link TerminalSessionController} for adoption, submission, steering,
+ * cancellation, and flush-on-exit semantics.
  *
  * @module @deepseek-ai/dsh-tui
  */
 
-import { randomUUID } from 'node:crypto'
 import { existsSync, rmSync, writeFileSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
 import { basename, join } from 'node:path'
 import { spawn } from 'node:child_process'
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
-import { installModelSelection } from '@deepseek-ai/dsh-agent'
 import { resolveDshHome } from '@deepseek-ai/dsh-home-paths'
-import type { Agent, AgentHandle, ModelSelectionRef } from '@deepseek-ai/dsh-agent'
+import type { Agent, ModelSelectionRef } from '@deepseek-ai/dsh-agent'
 import type {} from '@deepseek-ai/dsh-agent-default-model'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
 import { SessionId } from '@deepseek-ai/dsh-session'
-import type { Session, SessionEvent, SessionStore, TurnEndReason } from '@deepseek-ai/dsh-session'
+import type { Session, SessionEvent, TurnEndReason } from '@deepseek-ai/dsh-session'
 import type {} from '@deepseek-ai/cordis-plugin-loader'
 import type {} from '@deepseek-ai/dsh-cmdline'
 import type {} from '@deepseek-ai/dsh-user-approval'
 import type { ApprovalOutcome } from '@deepseek-ai/dsh-user-approval/types'
 import type {} from '@deepseek-ai/dsh-user-questions'
-import type { AskUserQuestionAnswer, AskUserQuestionItem } from '@deepseek-ai/dsh-user-questions'
+import type { AskUserQuestionAnswer, AskUserQuestionItem, AskUserQuestionOption } from '@deepseek-ai/dsh-user-questions'
 import type { FileDiff } from '@deepseek-ai/dsh-tools/presentation'
 import type { ImageBlock } from '@deepseek-ai/dsh-llm'
-import type { UserQuestionProvider } from '@deepseek-ai/dsh-user-questions'
 import type {} from '@deepseek-ai/dsh-session-persistence'
 import type {} from '@deepseek-ai/dsh-commands'
 import type {} from '@deepseek-ai/dsh-permission-presets'
@@ -48,6 +47,10 @@ import { loadCustomCommands } from './custom-commands.ts'
 import { UiStore } from './ui/store.ts'
 import { mountApp } from './ui/app.tsx'
 import type { AppCallbacks } from './ui/app.tsx'
+import { TerminalSessionController } from './controller.ts'
+
+export { TerminalSessionController } from './controller.ts'
+export type { TerminalSessionCallbacks, TerminalSessionControllerOptions } from './controller.ts'
 
 /** Stable Cordis plugin name. */
 export const name = 'tui-runner'
@@ -130,41 +133,13 @@ function resolveSelection(
   return { provider: base.provider, model: override }
 }
 
-/** Options shared by one-shot and interactive agent creation. */
-interface CreateOptions {
-  resumeSessionId: string
-  /** Mutable selection the agent reads at each step's prompt assembly. */
-  selectionRef: ModelSelectionRef
-}
-
-/** Create or resume an agent through the core registry. */
-async function createAgent(ctx: Context, options: CreateOptions): Promise<AgentHandle> {
-  const agents = ctx.get('agents')
-  if (agents === undefined) throw new Error('tui-runner: the agents registry is not mounted')
-  const selected = options.selectionRef.current
-  if (selected === undefined) throw new Error('tui-runner: no model selection')
-  const setup = (agentCtx: Context): void => {
-    installModelSelection(agentCtx, options.selectionRef)
-  }
-  const agentOptions = { provider: selected.provider, model: selected.model }
-  if (options.resumeSessionId !== '') {
-    return agents.resume({ resumeSessionId: SessionId(options.resumeSessionId), agentOptions, setup })
-  }
-  return agents.create({
-    sessionId: SessionId(`session-${randomUUID()}`),
-    meta: { cwd: process.cwd() },
-    agentOptions,
-    setup,
-  })
-}
-
 /** Report an unexpected runner failure and request a failing exit. */
 function fail(message: string, exit: (code: number) => void): void {
   internals.stderr.write(`dsh: ${message}\n`)
   exit(1)
 }
 
-/** One-shot mode: drive one task and print its final assistant text. */
+/** One-shot mode (`dsh exec`): drive one task and print its final assistant text. */
 async function runOneShot(ctx: Context, config: Config, exit: (code: number) => void): Promise<void> {
   await ctx.get('loader')?.await()
   const agents = ctx.get('agents')
@@ -173,27 +148,31 @@ async function runOneShot(ctx: Context, config: Config, exit: (code: number) => 
   if (agents === undefined || defaultModel === undefined || sessions === undefined) return
   const selection = resolveSelection(defaultModel, config.model)
   const selectionRef: ModelSelectionRef = { current: selection, assembled: undefined }
-  const handle = await createAgent(ctx, { resumeSessionId: config.resumeSessionId, selectionRef })
-  const { agent } = handle
-  await agent.whenIdle()
-  const firstSeq = agent.session.seq
 
-  // JSONL mode streams every session event after submission as one JSON line.
-  let disposeStream: (() => void) | undefined
-  if (config.output === 'jsonl') {
-    disposeStream = ctx.on('session/event', (session, event) => {
-      if (session !== agent.session || event.seq < firstSeq) return
-      internals.stdout.write(`${JSON.stringify({ type: event.type, data: event.data })}\n`)
-    })
-  }
-
+  // JSONL mode streams every committed session event after submission as one
+  // JSON line; events committed before submission (resume replay) are skipped.
+  let firstSeq = Number.POSITIVE_INFINITY
+  const controller = new TerminalSessionController({
+    ctx,
+    selectionRef,
+    callbacks: {
+      onEvent: (session, event) => {
+        if (config.output !== 'jsonl') return
+        if (session.id !== controller.live()?.id) return
+        if (event.seq < firstSeq) return
+        internals.stdout.write(`${JSON.stringify({ type: event.type, data: event.data })}\n`)
+      },
+      askApproval: () => Promise.resolve<ApprovalOutcome>('rejected'),
+      askQuestions: () => Promise.resolve({ answers: [] }),
+    },
+  })
+  const agent = await controller.start(config.resumeSessionId)
+  firstSeq = agent.session.seq
   const blocks = await imageBlocks(ctx, config.images)
-  agent.followup(createUserMessage({
+  await controller.submit(createUserMessage({
     content: [{ type: 'text', text: config.task }, ...blocks],
     source: { kind: 'user' },
   }))
-  await agent.whenIdle()
-  await sessions.flush(agent.session)
   const outcome = summarize(agent.session.events, firstSeq)
   const reason = outcome.reason
   if (config.output === 'json') {
@@ -212,8 +191,7 @@ async function runOneShot(ctx: Context, config: Config, exit: (code: number) => 
       internals.stderr.write(`dsh: ${reason.error.code}: ${reason.error.message}\n`)
     }
   }
-  disposeStream?.()
-  await handle.dispose()
+  await controller.shutdown()
   if (config.ephemeral) {
     const persistence = ctx.get('sessionPersistence')
     if (persistence !== undefined) await persistence.delete(SessionId(agent.id))
@@ -255,8 +233,9 @@ function helpText(): string {
     '  /review           review this session\'s file changes for bugs',
     '  /undo             revert the most recent file change',
     '  /help             show this help',
-    '  /quit             exit',
+    '  /quit, /exit      exit',
     'Keys: Shift+Tab cycles the permission preset; Ctrl+P toggles plan mode; Ctrl+C cancels the turn.',
+    'Keys: Ctrl+D quits and flushes; typed input during a run steers the agent at its next step.',
     'A !-prefixed line runs a local shell command, e.g. !git status.',
     'Custom commands: $DSH_HOME/commands/<name>.md (prompt template with $ARGUMENTS).',
   ].join('\n')
@@ -343,24 +322,6 @@ function streamSubagentEventToStore(event: SessionEvent, store: UiStore, label: 
   }
 }
 
-/**
- * Whether a session belongs to the live root: itself, or any subagent whose
- * parent chain reaches the root id.
- * @param session - the session to test.
- * @param rootId - the live root session id.
- * @param sessions - the sessions registry used to walk the parent chain.
- */
-function belongsToCurrent(session: Session, rootId: string, sessions: SessionStore): boolean {
-  let cursor: Session | undefined = session
-  while (cursor !== undefined) {
-    if (cursor.id === rootId) return true
-    const parent = cursor.header.parentSession
-    if (parent === undefined) return false
-    cursor = sessions.get(parent)
-  }
-  return false
-}
-
 /** Join the visible text blocks of a message. */
 function textOf(content: readonly ContentBlock[]): string {
   return content.filter(block => block.type === 'text').map(block => block.text).join('').trim()
@@ -400,46 +361,118 @@ function makePromptQueue(): { run<T>(fn: () => Promise<T>): Promise<T> } {
   }
 }
 
-/** Ask the user through the UI store, resolving with the chosen key or typed text. */
-function askStore(store: UiStore, question: string, choices: readonly string[]): Promise<string | null> {
-  return new Promise((resolve) => { store.setPrompt({ question, choices, answer: resolve }) })
+/**
+ * Ask a closed single-key choice; the prompt clears itself on the answer, and
+ * a null answer means the human dismissed it (Esc, Ctrl+D, or turn cancel).
+ * @param store - the UI store the prompt renders through.
+ * @param question - the prompt line.
+ * @param choices - the accepted single-character keys.
+ */
+function askChoice(store: UiStore, question: string, choices: readonly string[]): Promise<string | null> {
+  return new Promise((resolve) => {
+    store.setPrompt({
+      kind: 'choice',
+      question,
+      choices,
+      answer: (key) => { store.setPrompt(undefined); resolve(key) },
+    })
+  })
 }
 
-/** Prompt the user to allow or reject one approval. */
-async function promptApproval(store: UiStore, toolName: string, reason: string | undefined): Promise<ApprovalOutcome> {
+/**
+ * Ask free text, optionally with instant number shortcuts that answer only
+ * from an empty buffer; `multiLine` collects lines until an empty one.
+ * @param store - the UI store the prompt renders through.
+ * @param question - the prompt line.
+ * @param choices - instant shortcut keys (preset option numbers).
+ * @param multiLine - collect until an empty line instead of one Enter.
+ */
+function askText(store: UiStore, question: string, choices: readonly string[], multiLine: boolean): Promise<string | null> {
+  return new Promise((resolve) => {
+    store.setPrompt({
+      kind: 'text',
+      question,
+      choices,
+      multiLine,
+      answer: (text) => { store.setPrompt(undefined); resolve(text) },
+    })
+  })
+}
+
+/**
+ * Prompt the user to allow or reject one approval; a null answer (Esc,
+ * Ctrl+D, or turn cancel) means the request was dismissed as cancelled.
+ * @param store - the UI store the prompt renders through.
+ * @param toolName - the tool the approval gates.
+ * @param reason - the asker's human-readable explanation, if any.
+ * @returns the closed outcome: allow, reject, or cancelled for a dismissal.
+ */
+export async function promptApproval(store: UiStore, toolName: string, reason: string | undefined): Promise<ApprovalOutcome> {
   const question = reason === undefined ? `Run ${toolName}? [y/N]` : `Run ${toolName} — ${reason}? [y/N]`
-  const key = await askStore(store, question, ['y', 'n'])
-  return key === 'y' ? 'allowed-once' : 'rejected'
+  const key = await askChoice(store, question, ['y', 'n'])
+  if (key === 'y') return 'allowed-once'
+  if (key === null) return 'cancelled'
+  return 'rejected'
 }
 
-/** Ask every question in one request, serially. */
-async function promptQuestions(store: UiStore, questions: readonly AskUserQuestionItem[]): Promise<AskUserQuestionAnswer> {
+/**
+ * Split one submitted answer line into selected option labels and leftover
+ * custom text: numeric tokens in range select presets, everything else (and
+ * out-of-range numbers) is the human's own answer.
+ * @param line - the submitted answer text.
+ * @param options - the question's preset options.
+ */
+function parseOptionAnswer(line: string, options: readonly AskUserQuestionOption[]): { selected: string[]; custom: string | undefined } {
+  const selected: string[] = []
+  const leftover: string[] = []
+  for (const token of line.split(/[,\s]+/)) {
+    if (token === '') continue
+    if (/^\d+$/.test(token)) {
+      const index = Number(token)
+      const option = index >= 1 && index <= options.length ? options[index - 1] : undefined
+      if (option !== undefined) {
+        selected.push(option.label)
+        continue
+      }
+    }
+    leftover.push(token)
+  }
+  const custom = leftover.join(' ').trim()
+  return { selected, custom: custom === '' ? undefined : custom }
+}
+
+/**
+ * Ask every question in one request, serially. Preset options accept their
+ * numbers, typed custom answers, or both (multi-select); option-free
+ * questions take multi-line free text.
+ * @param store - the UI store the prompts render through.
+ * @param questions - the questions to answer, in order.
+ * @returns the structured answers, one item per question.
+ */
+export async function promptQuestions(store: UiStore, questions: readonly AskUserQuestionItem[]): Promise<AskUserQuestionAnswer> {
   const answers: AskUserQuestionAnswer['answers'] = []
   for (const question of questions) {
     const options = question.options ?? []
     store.push({ kind: 'info', text: question.header === undefined ? question.question : `${question.header}: ${question.question}` })
     if (question.detail !== undefined) store.push({ kind: 'info', text: question.detail })
     if (options.length === 0) {
-      const text = await askStore(store, `${question.question} `, [])
+      const text = await askText(store, `${question.question} `, [], true)
       answers.push({ id: question.id, selected: [], ...(text === null ? {} : { custom: text }) })
-    } else if (question.multiSelect === true) {
-      options.forEach((option, index) => { store.push({ kind: 'info', text: `  ${index + 1}. ${option.label}` }) })
-      const line = await askStore(store, 'choose (comma-separated numbers): ', [])
-      const indices = (line ?? '').split(/[,\s]+/).filter(token => /^\d+$/.test(token)).map(Number)
-      const selected = indices
-        .filter(index => index >= 1 && index <= options.length)
-        .map(index => options[index - 1])
-        .filter((option): option is (typeof options)[number] => option !== undefined)
-        .map(option => option.label)
-      answers.push({ id: question.id, selected })
-    } else {
-      options.forEach((option, index) => { store.push({ kind: 'info', text: `  ${index + 1}. ${option.label}` }) })
-      const keys = options.map((_, index) => String(index + 1))
-      const key = await askStore(store, `choose [${keys.join('/')}]`, keys)
-      const index = key === null ? -1 : Number.parseInt(key, 10) - 1
-      const chosen = index >= 0 && index < options.length ? options[index] : undefined
-      answers.push({ id: question.id, selected: chosen === undefined ? [] : [chosen.label] })
+      continue
     }
+    options.forEach((option, index) => { store.push({ kind: 'info', text: `  ${index + 1}. ${option.label}` }) })
+    // Instant number shortcuts only while single digits stay unambiguous.
+    const shortcuts = options.length <= 9 ? options.map((_, index) => String(index + 1)) : []
+    const suffix = shortcuts.length === 0 ? '' : ` (${shortcuts.join('/')}, or type your own)`
+    const text = await askText(store, question.multiSelect === true
+      ? 'choose numbers, your own answer, or both'
+      : `choose${suffix}`, shortcuts, false)
+    if (text === null) {
+      answers.push({ id: question.id, selected: [] })
+      continue
+    }
+    const parsed = parseOptionAnswer(text, options)
+    answers.push({ id: question.id, selected: parsed.selected, ...(parsed.custom === undefined ? {} : { custom: parsed.custom }) })
   }
   return { answers }
 }
@@ -516,7 +549,7 @@ function registerCustomCommands(ctx: Context): void {
 
 /** The built-in slash-command names plus every registry command. */
 function slashNames(ctx: Context, agent: Agent): string[] {
-  const names = new Set(['new', 'fork', 'delete', 'resume', 'model', 'login', 'logout', 'sessions', 'status', 'compact', 'init', 'doctor', 'export', 'diff', 'review', 'undo', 'help', 'quit'])
+  const names = new Set(['new', 'fork', 'delete', 'resume', 'model', 'login', 'logout', 'sessions', 'status', 'compact', 'init', 'doctor', 'export', 'diff', 'review', 'undo', 'help', 'quit', 'exit'])
   const commands = ctx.get('commands')
   if (commands !== undefined) {
     for (const descriptor of commands.list(agent)) names.add(descriptor.name)
@@ -622,68 +655,36 @@ async function runInteractive(ctx: Context, config: Config, exit: (code: number)
     }
   }
 
-  const current: { handle: AgentHandle | undefined; agent: Agent | undefined } = { handle: undefined, agent: undefined }
   const store = new UiStore()
   const promptQueue = makePromptQueue()
-
-  // Approval answerer: only our own agent, fail closed on abort.
-  if (ctx.get('approval') !== undefined) {
-    ctx.on('approval/request', (req, next) => {
-      if (req.agent !== current.agent) return next()
-      if (req.signal?.aborted === true) return Promise.resolve<ApprovalOutcome>('cancelled')
-      return promptQueue.run(() => promptApproval(store, req.toolName, req.reason))
-    })
-  }
-
-  // User-questions provider: only our own live root.
-  const questions = ctx.get('userQuestions')
-  let disposeProvider: (() => void) | undefined
-  if (questions !== undefined) {
-    const provider: UserQuestionProvider = {
-      ask(request): Promise<AskUserQuestionAnswer> {
-        if (request.agent !== current.agent) {
-          return Promise.reject(new Error('terminal user interaction requires the live terminal agent'))
-        }
-        return promptQueue.run(() => promptQuestions(store, request.questions))
+  // Engage raw mode eagerly: Ink enables it through a passive effect that
+  // some environments flush lazily, and a first keystroke landing in
+  // canonical mode would coalesce the typed line with its Enter.
+  internals.stdin.setRawMode?.(true)
+  const controller = new TerminalSessionController({
+    ctx,
+    selectionRef,
+    callbacks: {
+      onEvent: (session, event) => {
+        if (session === controller.live()?.session) streamEventToStore(event, store)
+        else streamSubagentEventToStore(event, store, `[subagent ${session.id.slice(-8)}]`)
       },
-    }
-    disposeProvider = questions.registerProvider(provider)
-  }
+      askApproval: (toolName, reason) => promptQueue.run(() => promptApproval(store, toolName, reason)),
+      askQuestions: questions => promptQueue.run(() => promptQuestions(store, questions)),
+      onRunningChange: (running) => { store.setRunning(running) },
+      onAdopt: (agent, resumed) => {
+        if (resumed) {
+          for (const event of agent.session.events) replayEventToStore(event, store)
+        }
+      },
+    },
+  })
 
   registerCustomCommands(ctx)
 
-  // Live event stream: the current session renders inline, and subagents of
-  // the current root render as labeled background rows.
-  const disposeStream = ctx.on('session/event', (session, event) => {
-    if (current.agent === undefined) return
-    if (session === current.agent.session) {
-      streamEventToStore(event, store)
-      return
-    }
-    if (belongsToCurrent(session, current.agent.id, sessions)) {
-      streamSubagentEventToStore(event, store, `[subagent ${session.id.slice(-8)}]`)
-    }
-  })
-
   const refreshStatus = (): void => {
-    if (current.agent !== undefined) store.setStatus(statusText(selection, ctx, current.agent))
-  }
-
-  const disposeCurrent = async (): Promise<void> => {
-    await current.handle?.dispose()
-    current.handle = undefined
-    current.agent = undefined
-  }
-
-  const adopt = async (): Promise<Agent> => {
-    const handle = await createAgent(ctx, { resumeSessionId, selectionRef })
-    current.handle = handle
-    current.agent = handle.agent
-    await handle.agent.whenIdle()
-    if (resumeSessionId !== '') {
-      for (const event of handle.agent.session.events) replayEventToStore(event, store)
-    }
-    return handle.agent
+    const agent = controller.live()
+    if (agent !== undefined) store.setStatus(statusText(selection, ctx, agent))
   }
 
   let quitResolve: (() => void) | undefined
@@ -693,7 +694,7 @@ async function runInteractive(ctx: Context, config: Config, exit: (code: number)
 
   /** Handle one submitted line: a slash command, a mention, or a plain prompt. */
   const handleLine = async (line: string): Promise<void> => {
-    const agent = current.agent
+    const agent = controller.live()
     if (agent === undefined) return
     if (line.startsWith('!')) {
       await runLocalCommand(line.slice(1).trim(), store)
@@ -710,9 +711,7 @@ async function runInteractive(ctx: Context, config: Config, exit: (code: number)
           store.push({ kind: 'info', text: helpText() })
           return
         case 'new':
-          await disposeCurrent()
-          resumeSessionId = ''
-          await adopt()
+          await controller.replace('')
           refreshStatus()
           store.push({ kind: 'info', text: 'started a fresh session' })
           return
@@ -764,9 +763,7 @@ async function runInteractive(ctx: Context, config: Config, exit: (code: number)
         case 'fork': {
           const child = sessions.fork(agent.session)
           const parentId = agent.id
-          await disposeCurrent()
-          resumeSessionId = child.id
-          await adopt()
+          await controller.replace(child.id)
           refreshStatus()
           store.push({ kind: 'info', text: `forked ${child.id} from ${parentId}` })
           return
@@ -800,9 +797,7 @@ async function runInteractive(ctx: Context, config: Config, exit: (code: number)
             store.push({ kind: 'error', text: 'no session to resume' })
             return
           }
-          await disposeCurrent()
-          resumeSessionId = id
-          await adopt()
+          await controller.replace(id)
           refreshStatus()
           store.push({ kind: 'info', text: `resumed session ${id}` })
           return
@@ -863,14 +858,10 @@ async function runInteractive(ctx: Context, config: Config, exit: (code: number)
           const prompt = 'Review the following changes from this session for bugs, style issues, and missing tests:\n\n'
             + diffs.map(diff => `## ${diff.path}\n${diff.newText}`).join('\n\n')
           store.push({ kind: 'user', text: '/review' })
-          store.setRunning(true)
-          agent.followup(createUserMessage({
+          await controller.submit(createUserMessage({
             content: [{ type: 'text', text: prompt }],
             source: { kind: 'user' },
           }))
-          await agent.whenIdle()
-          await sessions.flush(agent.session)
-          store.setRunning(false)
           refreshStatus()
           return
         }
@@ -907,8 +898,7 @@ async function runInteractive(ctx: Context, config: Config, exit: (code: number)
                 if (execution.result.text !== undefined) {
                   store.push({ kind: execution.result.kind === 'error' ? 'error' : 'info', text: execution.result.text })
                 }
-                await agent.whenIdle()
-                await sessions.flush(agent.session)
+                await controller.settle()
                 refreshStatus()
                 return
               }
@@ -927,7 +917,7 @@ async function runInteractive(ctx: Context, config: Config, exit: (code: number)
       const mention = readMention(path, process.cwd())
       if (mention === undefined) continue
       const suffix = mention.truncated ? ' (truncated)' : ''
-      agent.inject(createUserMessage({
+      controller.inject(createUserMessage({
         content: [{ type: 'text', text: `Content of ${mention.path}${suffix}:\n${mention.content}` }],
         source: { kind: 'plugin', plugin: 'tui-mention' },
       }))
@@ -935,14 +925,12 @@ async function runInteractive(ctx: Context, config: Config, exit: (code: number)
     const blocks = await imageBlocks(ctx, pendingImages)
     pendingImages = []
     store.push({ kind: 'user', text: line })
-    store.setRunning(true)
-    agent.followup(createUserMessage({
+    // While a turn runs, a submitted line steers the agent at its next step
+    // instead of queueing a second turn.
+    await controller.submit(createUserMessage({
       content: [{ type: 'text', text: line }, ...blocks],
       source: { kind: 'user' },
     }))
-    await agent.whenIdle()
-    await sessions.flush(agent.session)
-    store.setRunning(false)
     refreshStatus()
   }
 
@@ -952,11 +940,24 @@ async function runInteractive(ctx: Context, config: Config, exit: (code: number)
         fail(error instanceof Error ? error.message : String(error), exit)
       })
     },
-    onCycleApproval: () => { cyclePermissionPreset(ctx, current.agent, store); refreshStatus() },
-    onTogglePlan: () => { togglePlanMode(ctx, current.agent, store); refreshStatus() },
+    onQuit: () => {
+      // Let the current input/render pass settle before the finally block
+      // unmounts the Ink surface underneath it.
+      setImmediate(() => { quitResolve?.() })
+    },
+    onCycleApproval: () => { cyclePermissionPreset(ctx, controller.live(), store); refreshStatus() },
+    onTogglePlan: () => { togglePlanMode(ctx, controller.live(), store); refreshStatus() },
     onComplete: (line, cursor) => completeMention(line, cursor, process.cwd()),
-    onCancel: () => { current.agent?.cancel({ kind: 'user' }) },
-    onSuggest: (line, cursor) => current.agent === undefined ? [] : suggestionsFor(ctx, current.agent, line, cursor),
+    onCancel: () => {
+      controller.cancel()
+      // A pending approval/question prompt belongs to the cancelled turn;
+      // dismiss it so the prompt loop cannot hang.
+      store.dismissPrompt()
+    },
+    onSuggest: (line, cursor) => {
+      const agent = controller.live()
+      return agent === undefined ? [] : suggestionsFor(ctx, agent, line, cursor)
+    },
   }
 
   let instance: ReturnType<typeof mountApp>
@@ -975,14 +976,13 @@ async function runInteractive(ctx: Context, config: Config, exit: (code: number)
   instance = mountApp(store, callbacks)
 
   try {
-    await adopt()
+    await controller.start(resumeSessionId)
     refreshStatus()
     await quitPromise
   } finally {
-    disposeStream()
-    disposeProvider?.()
     instance.unmount()
-    await disposeCurrent()
+    internals.stdin.setRawMode?.(false)
+    await controller.shutdown()
   }
   exit(0)
 }
