@@ -268,7 +268,7 @@ describe.skipIf(process.platform === 'win32')('tui interactive REPL (real Loader
         DSH_TELEMETRY_DISABLED: '1',
         NO_COLOR: '1',
       }, [
-        { op: 'wait', text: '>' },
+        { op: 'wait', text: 'dsh' },
         { op: 'wait', text: 'deepseek-official' },
         { op: 'send', text: 'hello\n' },
         { op: 'wait', text: 'mock interactive response' },
@@ -276,7 +276,7 @@ describe.skipIf(process.platform === 'win32')('tui interactive REPL (real Loader
         { op: 'expect-exit', code: 0 },
       ])
       expect(output).toContain('dsh')
-      expect(output).toContain('>')
+      expect(output).toContain('sandbox workspace-write')
       expect(output).toContain('mock interactive response')
     } finally {
       await server.close()
@@ -300,7 +300,7 @@ describe.skipIf(process.platform === 'win32')('tui interactive REPL (real Loader
         DSH_TELEMETRY_DISABLED: '1',
         NO_COLOR: '1',
       }, [
-        { op: 'wait', text: '>' },
+        { op: 'wait', text: 'dsh' },
         { op: 'wait', text: 'deepseek-official' },
         { op: 'wait', text: 'sandbox workspace-write' },
         { op: 'send', text: '/status\n' },
@@ -348,7 +348,7 @@ describe.skipIf(process.platform === 'win32')('tui interactive REPL (real Loader
         DSH_TELEMETRY_DISABLED: '1',
         NO_COLOR: '1',
       }, [
-        { op: 'wait', text: '>' },
+        { op: 'wait', text: 'dsh' },
         { op: 'wait', text: 'deepseek-official' },
         { op: 'send', text: '你好，请记住这句话\n' },
         { op: 'wait', text: 'mock interactive response' },
@@ -396,7 +396,7 @@ describe.skipIf(process.platform === 'win32')('tui interactive REPL (real Loader
         DSH_TELEMETRY_DISABLED: '1',
         NO_COLOR: '1',
       }, [
-        { op: 'wait', text: '>' },
+        { op: 'wait', text: 'dsh' },
         { op: 'wait', text: 'deepseek-official' },
         { op: 'send', text: 'pick a color\n' },
         { op: 'wait', text: '1. red' },
@@ -441,7 +441,7 @@ describe.skipIf(process.platform === 'win32')('tui interactive REPL (real Loader
         DSH_TELEMETRY_DISABLED: '1',
         NO_COLOR: '1',
       }, [
-        { op: 'wait', text: '>' },
+        { op: 'wait', text: 'dsh' },
         { op: 'wait', text: 'deepseek-official' },
         { op: 'send', text: 'run a shell command\n' },
         { op: 'wait', text: 'Run bash' },
@@ -477,13 +477,13 @@ describe.skipIf(process.platform === 'win32')('tui interactive REPL (real Loader
     try {
       await runDshOneShot(env, 'seed the resume-last session')
       const output = await runTuiPty(env, [
-        { op: 'wait', text: '>' },
+        { op: 'wait', text: 'dsh' },
         { op: 'wait', text: 'deepseek-official' },
-        { op: 'wait', text: '› seed the resume-last session' },
+        { op: 'wait', text: '⏺ seed the resume-last session' },
         { op: 'send', text: '/quit\n' },
         { op: 'expect-exit', code: 0 },
       ], ['resume', '--last'])
-      expect(output).toContain('› seed the resume-last session')
+      expect(output).toContain('⏺ seed the resume-last session')
     } finally {
       await server.close()
       await rm(home, { recursive: true, force: true })
@@ -510,17 +510,17 @@ describe.skipIf(process.platform === 'win32')('tui interactive REPL (real Loader
       await runDshOneShot(env, 'seed the older picker session')
       await runDshOneShot(env, 'seed the newer picker session')
       const output = await runTuiPty(env, [
-        { op: 'wait', text: '>' },
+        { op: 'wait', text: 'dsh' },
         { op: 'wait', text: 'Resume session' },
         // Newest first: move to the older session and resume it.
         { op: 'arrow', dir: 'down' },
         { op: 'send', text: '\n' },
-        { op: 'wait', text: '› seed the older picker session' },
+        { op: 'wait', text: '⏺ seed the older picker session' },
         { op: 'send', text: '/quit\n' },
         { op: 'expect-exit', code: 0 },
       ], ['resume'])
       expect(output).toContain('Resume session')
-      expect(output).toContain('› seed the older picker session')
+      expect(output).toContain('⏺ seed the older picker session')
     } finally {
       await server.close()
       await rm(home, { recursive: true, force: true })
@@ -631,7 +631,7 @@ describe.skipIf(process.platform === 'win32')('tui interactive REPL (real Loader
         DSH_TELEMETRY_DISABLED: '1',
         NO_COLOR: '1',
       }, [
-        { op: 'wait', text: '>' },
+        { op: 'wait', text: 'dsh' },
         { op: 'wait', text: 'deepseek-official' },
         { op: 'send', text: '$nope please\n' },
         { op: 'wait', text: 'unknown skill $nope' },
@@ -668,7 +668,7 @@ describe.skipIf(process.platform === 'win32')('tui interactive REPL (real Loader
         DSH_TELEMETRY_DISABLED: '1',
         NO_COLOR: '1',
       }, [
-        { op: 'wait', text: '>' },
+        { op: 'wait', text: 'dsh' },
         { op: 'wait', text: 'deepseek-official' },
         { op: 'send', text: '/reasoning high\n' },
         { op: 'wait', text: 'reasoning set to high (next turn)' },
@@ -710,7 +710,7 @@ describe.skipIf(process.platform === 'win32')('tui interactive REPL (real Loader
         DSH_TELEMETRY_DISABLED: '1',
         NO_COLOR: '1',
       }, [
-        { op: 'wait', text: '>' },
+        { op: 'wait', text: 'dsh' },
         { op: 'wait', text: 'deepseek-official' },
         { op: 'send', text: 'start a slow turn\n' },
         { op: 'wait', text: 'slow-marker' },

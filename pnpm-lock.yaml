@@ -1708,6 +1708,9 @@ importers:
       '@deepseek-ai/dsh-code-runtime-worker-thread':
         specifier: workspace:^
         version: link:../../code-runtime/code-runtime-worker-thread
+      '@deepseek-ai/dsh-sandbox-policy':
+        specifier: workspace:^
+        version: link:../../sandbox/sandbox-policy
       '@deepseek-ai/dsh-session-query':
         specifier: workspace:^
         version: link:../../session-query/session-query

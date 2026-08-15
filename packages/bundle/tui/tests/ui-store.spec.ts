@@ -35,10 +35,10 @@ describe('UiStore', () => {
     expect(store.getSnapshot().prompt).toBeUndefined()
   })
 
-  it('setStatus publishes the status bar text', () => {
+  it('setStatus publishes the status bar halves', () => {
     const store = new UiStore()
-    store.setStatus('p/m · 42 tokens')
-    expect(store.getSnapshot().status).toBe('p/m · 42 tokens')
+    store.setStatus({ left: 'sandbox read-only · 42 tokens', right: 'p/m' })
+    expect(store.getSnapshot().status).toEqual({ left: 'sandbox read-only · 42 tokens', right: 'p/m' })
   })
 
   it('setRunning publishes the running flag', () => {

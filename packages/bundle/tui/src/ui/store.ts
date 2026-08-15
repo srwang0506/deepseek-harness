@@ -46,10 +46,18 @@ export type UiPrompt = PromptMode & {
   answer: (value: string | null) => void
 }
 
+/** The two-sided status bar: session facts left, model right (Codex-style). */
+export interface StatusInfo {
+  /** Left side: sandbox mode, token usage, permission preset, plan mode. */
+  left: string
+  /** Right side: provider/model, reasoning effort, launch override. */
+  right: string
+}
+
 /** The whole renderable UI snapshot. */
 export interface UiState {
   items: readonly UiItem[]
-  status: string
+  status: StatusInfo
   running: boolean
   prompt: UiPrompt | undefined
   picker: UiPicker | undefined
@@ -63,7 +71,7 @@ type Listener = () => void
  * `useSyncExternalStore`.
  */
 export class UiStore {
-  private state: UiState = { items: [], status: '', running: false, prompt: undefined, picker: undefined }
+  private state: UiState = { items: [], status: { left: 'dsh', right: '' }, running: false, prompt: undefined, picker: undefined }
   private listeners = new Set<Listener>()
   private nextKey = 1
 
@@ -106,10 +114,10 @@ export class UiStore {
   }
 
   /**
-   * Replace the status-bar text.
-   * @param status - the new status text.
+   * Replace the status-bar halves.
+   * @param status - the new left/right status text.
    */
-  setStatus(status: string): void {
+  setStatus(status: StatusInfo): void {
     this.publish({ ...this.state, status })
   }
 

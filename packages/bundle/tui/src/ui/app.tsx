@@ -4,7 +4,7 @@
  * @module @deepseek-ai/dsh-tui/ui/app
  */
 
-import React, { useRef, useState, useSyncExternalStore } from 'react'
+import React, { useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { Box, Text, render, useInput } from 'ink'
 import type { UiStore, UiItem } from './store.ts'
 import { DiffView, MarkdownView } from './rich.tsx'
@@ -34,6 +34,9 @@ export interface AppCallbacks {
   onPickerCancel: () => void
 }
 
+/** Braille spinner frames for the running-turn indicator. */
+const SPINNER_FRAMES = ['⠋', '⠙', '⠸', '⠴', '⠦', '⠇']
+
 /** Color each row by its presentation kind. */
 function colorOf(kind: UiItem['kind']): string | undefined {
   switch (kind) {
@@ -61,8 +64,8 @@ function selectSuggestion(line: string, chosen: string): string {
 function renderRow(item: UiItem): React.ReactNode {
   if (item.kind === 'assistant') return <MarkdownView text={item.text} />
   if (item.kind === 'diff') return <DiffView text={item.text} />
-  if (item.kind === 'tool') return <Text color="grey">{`  • ${item.text}`}</Text>
-  if (item.kind === 'user') return <Text bold>{`› ${item.text}`}</Text>
+  if (item.kind === 'tool') return <Text color="grey">{`⏺ ${item.text}`}</Text>
+  if (item.kind === 'user') return <Text color="grey">{`⏺ ${item.text}`}</Text>
   return colored(item.text, colorOf(item.kind))
 }
 
@@ -83,6 +86,21 @@ export function App({ store, callbacks }: { store: UiStore; callbacks: AppCallba
   const historyIndexRef = useRef(-1)
   inputRef.current = input
   promptTextRef.current = promptText
+
+  /** The running-turn spinner frame (Codex's braille spinner), advanced by a timer only while running. */
+  const [tick, setTick] = useState(0)
+  useEffect(() => {
+    if (!state.running) {
+      setTick(0)
+      return
+    }
+    function advance(): void {
+      setTick(previous => previous + 1)
+    }
+    const timer = setInterval(advance, 100)
+    return () => { clearInterval(timer) }
+  }, [state.running])
+  const spinner = state.running ? SPINNER_FRAMES[tick % SPINNER_FRAMES.length] : ''
 
   /** Move the input through previously submitted lines; -1 means not browsing. */
   const recallHistory = (step: -1 | 1): void => {
@@ -227,13 +245,14 @@ export function App({ store, callbacks }: { store: UiStore; callbacks: AppCallba
   const picker = state.picker
   const suggestions = state.prompt === undefined && picker === undefined ? callbacks.onSuggest(input, input.length) : []
   const pickerRows = picker === undefined ? 0 : 2 + Math.min(picker.items.length, 12)
-  const visible = Math.max(0, rows - 4 - Math.min(suggestions.length, 8) - pickerRows)
+  const visible = Math.max(0, rows - 2 - Math.min(suggestions.length, 8) - pickerRows)
   const items = state.items.slice(-visible)
   const promptLine = state.prompt === undefined
-    ? `> ${input}`
+    ? input
     : state.prompt.kind === 'choice'
       ? state.prompt.question
       : `${state.prompt.question} ${promptText}`
+  const status = state.status
 
   return (
     <Box flexDirection="column" height={rows}>
@@ -265,10 +284,12 @@ export function App({ store, callbacks }: { store: UiStore; callbacks: AppCallba
               })}
             </Box>
           )}
-          <Box borderStyle="round" borderColor={state.running ? 'yellow' : 'grey'}>
-            <Text>{promptLine}</Text>
+          <Box><Text>{promptLine}</Text></Box>
+          <Box>
+            <Text color="grey" dimColor>{`${spinner === '' ? '' : `${spinner} `}${status.left === '' ? 'dsh' : status.left}`}</Text>
+            <Box flexGrow={1} />
+            <Text color="grey" dimColor>{status.right}</Text>
           </Box>
-          <Box><Text color="grey" dimColor>{state.status || 'dsh'}{state.running ? ' …' : ''}</Text></Box>
         </Box>
       )}
     </Box>

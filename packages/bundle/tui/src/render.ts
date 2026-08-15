@@ -11,7 +11,7 @@ import type { SessionEvent, TurnEndReason } from '@deepseek-ai/dsh-session'
 import { renderMarkdown } from './markdown.ts'
 import { diffsFromMeta, renderFileDiffs } from './diff.ts'
 import { extractText, toolCallTitle, truncate } from './present.ts'
-import { bold, cyan, dim, grey, red, yellow } from './theme.ts'
+import { bold, dim, grey, red, yellow } from './theme.ts'
 
 /** Options controlling one render pass. */
 export interface RenderOptions {
@@ -39,7 +39,7 @@ function indent(text: string, prefix: string): string {
  * @returns the prompt line.
  */
 export function renderUserMessage(text: string): string {
-  return `${cyan('›')} ${text}`
+  return `${grey('⏺')} ${text}`
 }
 
 /**
@@ -58,7 +58,7 @@ export function renderAssistantText(text: string): string {
  * @returns the header line.
  */
 export function renderToolCall(name: string, argsJson: string): string {
-  return `  ${cyan('•')} ${bold(toolCallTitle(name, argsJson))}`
+  return `  ${grey('⏺')} ${bold(toolCallTitle(name, argsJson))}`
 }
 
 /**

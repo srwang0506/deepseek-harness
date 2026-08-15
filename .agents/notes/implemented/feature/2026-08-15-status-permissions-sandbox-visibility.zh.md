@@ -10,7 +10,7 @@ Codex 对齐复查发现，TUI 无法回答每个用户在信任 Agent 之前都
 
 ## 决策
 
-**呈现持久化事实，不发明新状态。** 底部状态栏（位于带边框的 composer 输入行下方，Codex 式布局）常驻显示模型（含推理强度）、`ctx.sandboxPolicy.resolve({ session })` 给出的生效 sandbox 模式与权限预设。`/status` 报告完整会话状态——会话 id、模型与推理强度、`-m` 启动覆盖、cwd、带工作区根的 sandbox 模式、审批策略、带选项列表的权限预设、事件与 token 计数、OpenAI 登录状态。`/permissions [preset]` 显示生效预设与所有可用选项，或通过 `permissionPresets.set` 切换会话（一条 `permission/preset` + 各旋钮事件），并严格区分两种授权范围：审批提示的允许只针对单次操作，预设切换是续跑时恢复的持久化会话策略。
+**呈现持久化事实，不发明新状态。** 底部状态栏（普通 composer 行下方的暗色 Codex 式一行）左侧常驻显示会话事实——`ctx.sandboxPolicy.resolve({ session })` 给出的生效 sandbox 模式、token 用量与权限预设——右侧为模型（含推理强度），轮次运行中显示 braille spinner。`/status` 报告完整会话状态——会话 id、模型与推理强度、`-m` 启动覆盖、cwd、带工作区根的 sandbox 模式、审批策略、带选项列表的权限预设、事件与 token 计数、OpenAI 登录状态。`/permissions [preset]` 显示生效预设与所有可用选项，或通过 `permissionPresets.set` 切换会话（一条 `permission/preset` + 各旋钮事件），并严格区分两种授权范围：审批提示的允许只针对单次操作，预设切换是续跑时恢复的持久化会话策略。
 
 **纯函数行构建器 + 薄闭包。** `sessionStatusRows` 与 `permissionRows` 是对普通输入的导出纯函数；runner 闭包只把实时缝隙（sandbox 策略、审批覆盖、预设、token 计量、凭据存储）折叠进它们。
 

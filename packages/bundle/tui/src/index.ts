@@ -54,6 +54,7 @@ import { extractText, toolCallTitle } from './present.ts'
 import { completeMention, extractMentions, readMention, suggestMentions } from './mention.ts'
 import { loadCustomCommands } from './custom-commands.ts'
 import { UiStore } from './ui/store.ts'
+import type { StatusInfo } from './ui/store.ts'
 import { mountApp } from './ui/app.tsx'
 import type { AppCallbacks } from './ui/app.tsx'
 import { TerminalSessionController } from './controller.ts'
@@ -628,7 +629,7 @@ function askText(store: UiStore, question: string, choices: readonly string[], m
  * @returns the closed outcome: allow, reject, or cancelled for a dismissal.
  */
 export async function promptApproval(store: UiStore, toolName: string, reason: string | undefined): Promise<ApprovalOutcome> {
-  const question = reason === undefined ? `Run ${toolName}? [y/N]` : `Run ${toolName} — ${reason}? [y/N]`
+  const question = reason === undefined ? `⚠ Run ${toolName}? [y/N]` : `⚠ Run ${toolName} — ${reason}? [y/N]`
   const key = await askChoice(store, question, ['y', 'n'])
   if (key === 'y') return 'allowed-once'
   if (key === null) return 'cancelled'
@@ -721,19 +722,23 @@ function togglePlanMode(ctx: Context, agent: Agent | undefined, store: UiStore):
   store.push({ kind: 'info', text: `plan mode ${active ? 'off' : 'on'}` })
 }
 
-/** The status-bar text: model, sandbox mode, permission preset, and plan mode. */
-function statusText(selection: ModelSelection, ctx: Context, agent: Agent, launchOverride: boolean): string {
-  const parts = [`${selection.provider}/${selection.model}${selection.reasoningEffort === undefined ? '' : ` (${selection.reasoningEffort})`}`]
-  if (launchOverride) parts.push('-m')
+/**
+ * The status-bar halves (Codex-style): session facts on the left, the model
+ * on the right. The App renders them on one dim line above nothing else.
+ */
+function statusText(selection: ModelSelection, ctx: Context, agent: Agent, launchOverride: boolean): StatusInfo {
+  const right = [`${selection.provider}/${selection.model}${selection.reasoningEffort === undefined ? '' : ` (${selection.reasoningEffort})`}`]
+  if (launchOverride) right.push('-m')
+  const left: string[] = []
   const sandbox = ctx.get('sandboxPolicy')?.resolve({ session: agent.session }).mode
-  if (sandbox !== undefined) parts.push(`sandbox ${sandbox}`)
+  if (sandbox !== undefined) left.push(`sandbox ${sandbox}`)
   const meter = ctx.get('tokenMeter')
-  if (meter !== undefined) parts.push(`${meter.measure(agent.session).totalTokens} tokens`)
+  if (meter !== undefined) left.push(`${meter.measure(agent.session).totalTokens} tokens`)
   const presets = ctx.get('permissionPresets')
-  if (presets !== undefined) parts.push(presets.current(agent.session.events))
+  if (presets !== undefined) left.push(presets.current(agent.session.events))
   const planMode = ctx.get('planMode')
-  if (planMode !== undefined && planMode.get(agent).active) parts.push('plan')
-  return parts.join(' · ')
+  if (planMode !== undefined && planMode.get(agent).active) left.push('plan')
+  return { left: left.join(' · '), right: right.join(' · ') }
 }
 
 /** The stored OpenAI GPT credential state, for the /status login row. */

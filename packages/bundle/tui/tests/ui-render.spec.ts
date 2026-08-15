@@ -51,20 +51,39 @@ describe('DiffView', () => {
 })
 
 describe('App', () => {
-  it('renders the composer box, conversation, and the status bar beneath it', () => {
+  it('renders the composer, conversation, and the two-sided status bar beneath it', () => {
     const store = new UiStore()
-    store.setStatus('deepseek-official/deepseek-v4-flash')
+    store.setStatus({ left: 'sandbox read-only', right: 'deepseek-official/deepseek-v4-flash' })
     store.push({ kind: 'assistant', text: 'hello' })
     const { lastFrame } = render(h(App, { store, callbacks: callbacks() }))
     const frame = lastFrame() ?? ''
     expect(frame).toContain('deepseek-v4-flash')
+    expect(frame).toContain('sandbox read-only')
     expect(frame).toContain('hello')
-    // Codex layout: the status bar sits below the conversation, inside a bordered composer.
-    expect(frame.indexOf('deepseek-v4-flash')).toBeGreaterThan(frame.indexOf('hello'))
-    expect(frame).toContain('╭')
+    // Codex layout: the dim status bar sits below the conversation.
+    expect(frame.indexOf('sandbox read-only')).toBeGreaterThan(frame.indexOf('hello'))
   })
 
-  it('renders typed input inside the bordered composer', async () => {
+  it('renders user and tool rows with the Codex marker', () => {
+    const store = new UiStore()
+    store.push({ kind: 'user', text: 'fix the bug' })
+    store.push({ kind: 'tool', text: '[bash] ls' })
+    const { lastFrame } = render(h(App, { store, callbacks: callbacks() }))
+    const frame = lastFrame() ?? ''
+    expect(frame).toContain('⏺ fix the bug')
+    expect(frame).toContain('⏺ [bash] ls')
+  })
+
+  it('shows the braille spinner in the status bar while running', () => {
+    const store = new UiStore()
+    store.setRunning(true)
+    store.setStatus({ left: 'sandbox read-only', right: 'p/m' })
+    const { lastFrame } = render(h(App, { store, callbacks: callbacks() }))
+    const frame = lastFrame() ?? ''
+    expect(frame).toMatch(/[⠋⠙⠸⠴⠦⠇]/)
+  })
+
+  it('renders typed input on the composer line', async () => {
     const store = new UiStore()
     const { stdin, lastFrame } = render(h(App, { store, callbacks: callbacks() }))
     // Ink attaches its stdin listener in a passive effect; give it a tick.
