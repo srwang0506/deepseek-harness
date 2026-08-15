@@ -46,10 +46,21 @@ export type UiPrompt = PromptMode & {
   answer: (value: string | null) => void
 }
 
+/** One previous user message the edit overlay can fork from. */
+export interface EditMessageItem {
+  /** The message event's seq (its identity in the overlay). */
+  seq: number
+  /** The message text as submitted. */
+  text: string
+  /** The fork boundary: seed events through this seq; -1 forks an empty conversation. */
+  forkBoundary: number
+}
+
 /** One overlay the composer can open over the input area. */
 export type UiOverlay =
   | { kind: 'history'; query: string; matches: readonly string[]; selected: number }
   | { kind: 'files'; query: string; matches: readonly string[]; selected: number }
+  | { kind: 'edit-message'; items: readonly EditMessageItem[]; selected: number }
 
 /** The two-sided status bar: session facts left, model right (Codex-style). */
 export interface StatusInfo {

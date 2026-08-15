@@ -21,6 +21,8 @@ function callbacks(overrides: Partial<AppCallbacks> = {}): AppCallbacks {
     onCancel: () => {},
     onSuggest: () => [],
     searchFiles: () => [],
+    editMessages: () => [],
+    onSubmitEdit: () => {},
     onPickerSelect: () => {},
     onPickerFork: () => {},
     onPickerCancel: () => {},
@@ -214,6 +216,31 @@ describe('App', () => {
     stdin.write('\r')
     await new Promise<void>((resolve) => { setImmediate(resolve) })
     expect(submitted).toEqual(['@README.md'])
+  })
+
+  it('opens the edit overlay with ↑ on an empty composer and forks on submit', async () => {
+    const store = new UiStore()
+    const edits: Array<{ line: string; forkBoundary: number }> = []
+    const withEdits = callbacks({
+      onSubmitEdit: (line, forkBoundary) => { edits.push({ line, forkBoundary }) },
+      editMessages: () => [
+        { seq: 0, text: 'first message', forkBoundary: -1 },
+        { seq: 2, text: 'second message', forkBoundary: 1 },
+      ],
+    })
+    const { stdin, lastFrame } = render(h(App, { store, callbacks: withEdits }))
+    await new Promise<void>((resolve) => { setImmediate(resolve) })
+    stdin.write('\u001b[A')
+    await new Promise<void>((resolve) => { setImmediate(resolve) })
+    expect(lastFrame() ?? '').toContain('edit message')
+    expect(lastFrame() ?? '').toContain('⏺ second message')
+    stdin.write('\r')
+    await new Promise<void>((resolve) => { setImmediate(resolve) })
+    stdin.write(' fixed!')
+    await new Promise<void>((resolve) => { setImmediate(resolve) })
+    stdin.write('\r')
+    await new Promise<void>((resolve) => { setImmediate(resolve) })
+    expect(edits).toEqual([{ line: 'second message fixed!', forkBoundary: 1 }])
   })
 
   it('shows suggestion rows above the input', () => {

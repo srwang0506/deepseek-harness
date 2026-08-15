@@ -126,6 +126,7 @@ Keys:
   Ctrl+R                           search the submitted prompt history
   @                                fuzzy search project files (Enter inserts the mention)
   Tab (while running)              queue the line for the next turn
+  ↑ (empty composer)               edit a previous message; submitting forks from it
 
 Custom commands: $DSH_HOME/commands/<name>.md (prompt template, $ARGUMENTS placeholder).
 `)

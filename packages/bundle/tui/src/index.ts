@@ -11,6 +11,7 @@
  * @module @deepseek-ai/dsh-tui
  */
 
+import { randomUUID } from 'node:crypto'
 import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
 import { basename, join } from 'node:path'
@@ -56,6 +57,7 @@ import { loadCustomCommands } from './custom-commands.ts'
 import { buildFileIndex } from './file-index.ts'
 import { fuzzyFilter } from './ui/fuzzy.ts'
 import { UiStore } from './ui/store.ts'
+import type { EditMessageItem } from './ui/store.ts'
 import type { StatusInfo } from './ui/store.ts'
 import { mountApp } from './ui/app.tsx'
 import type { AppCallbacks } from './ui/app.tsx'
@@ -412,19 +414,54 @@ export async function pickerSessions(ctx: Context): Promise<Array<{
  * @param id - the session to fork.
  * @returns the child session id.
  */
-export async function forkSessionById(ctx: Context, id: string): Promise<string> {
+export async function forkSessionById(ctx: Context, id: string, boundary?: number): Promise<string> {
   const sessions = ctx.get('sessions')
   if (sessions === undefined) throw new Error('tui-runner: the sessions registry is not mounted')
+  const persistence = ctx.get('sessionPersistence')
+  if (persistence === undefined) throw new Error('tui-runner: session persistence is not mounted')
   const live = sessions.get(SessionId(id))
-  if (live !== undefined) return sessions.fork(live).id
+  if (live !== undefined) return persistForkChild(ctx, live, boundary)
   const agents = ctx.get('agents')
   if (agents === undefined) throw new Error('tui-runner: the agents registry is not mounted')
   const handle = await agents.resume({ resumeSessionId: SessionId(id), agentOptions: {}, setup: () => {} })
   try {
-    return sessions.fork(handle.agent.session).id
+    return await persistForkChild(ctx, handle.agent.session, boundary)
   } finally {
     await handle.dispose()
   }
+}
+
+/**
+ * Fork one session through the persistence backend instead of the live store:
+ * a live fork child could never be adopted (agent adoption refuses live
+ * sessions), while a child persisted with `create` + `append` resumes through
+ * the ordinary persistence path.
+ * @param ctx - plugin context carrying the persistence service.
+ * @param source - the session whose event prefix seeds the child.
+ * @param boundary - the inclusive seed seq; undefined forks the whole log.
+ * @returns the child session id.
+ */
+async function persistForkChild(ctx: Context, source: Session, boundary: number | undefined): Promise<string> {
+  const persistence = ctx.get('sessionPersistence')
+  if (persistence === undefined) throw new Error('tui-runner: session persistence is not mounted')
+  const lastSeq = source.events.at(-1)?.seq ?? -1
+  const end = boundary ?? lastSeq
+  const seed = source.events.filter(event => event.seq <= end)
+  if (seed.length === 0) {
+    // An empty child would never materialize a persisted artifact, and an
+    // empty fork is indistinguishable from starting fresh.
+    throw new Error('cannot fork a session with no events')
+  }
+  const childId = SessionId(`session-${randomUUID()}`)
+  await persistence.create({
+    ...source.header,
+    id: childId,
+    parentSession: source.id,
+    createdAt: Date.now(),
+    seedLength: seed.length,
+  })
+  await persistence.append(childId, seed)
+  return childId
 }
 
 /** Default AGENTS.md written by /init when none exists. */
@@ -460,6 +497,7 @@ function helpText(): string {
     'Keys: Ctrl+R searches the submitted prompt history; Enter reuses the selected line.',
     'Keys: typing @ opens a fuzzy search over project files; Enter inserts the @path mention.',
     'Keys: Tab while a turn runs queues the line for the next turn; Enter steers instead.',
+    'Keys: ↑ on an empty composer edits a previous message; submitting forks the session from it.',
     'A !-prefixed line runs a local shell command, e.g. !git status.',
     'A $name token invokes a skill, e.g. $demo-skill (skills load from $DSH_HOME/skills and .dsh/skills).',
     'Custom commands: $DSH_HOME/commands/<name>.md (prompt template with $ARGUMENTS).',
@@ -1432,6 +1470,48 @@ async function runInteractive(ctx: Context, config: Config, exit: (code: number)
           fail(error instanceof Error ? error.message : String(error), exit)
         })
       }
+    },
+    editMessages: () => {
+      const agent = controller.live()
+      if (agent === undefined) return []
+      const items: EditMessageItem[] = []
+      let lastTurnStart: number | undefined
+      for (const event of agent.session.events) {
+        if (event.type === 'turn/start') {
+          lastTurnStart = event.seq
+          continue
+        }
+        if (event.type !== 'user/message' || event.data.source.kind !== 'user') continue
+        const text = extractText(event.data.content)
+        if (text === '') continue
+        // The fork seeds everything BEFORE the turn that carries the message:
+        // a fork ending mid-turn is invalid, and the edited message replaces
+        // its own turn. A message in the first turn forks an empty child.
+        items.push({ seq: event.seq, text, forkBoundary: lastTurnStart === undefined ? -1 : lastTurnStart - 1 })
+      }
+      return items
+    },
+    onSubmitEdit: (line, forkBoundary) => {
+      void (async () => {
+        const agent = controller.live()
+        if (agent === undefined) return
+        if (forkBoundary < 0) {
+          // Editing a message in the first turn forks an empty conversation.
+          await controller.replace('')
+        } else {
+          const childId = await forkSessionById(ctx, agent.id, forkBoundary)
+          await controller.replace(childId)
+        }
+        refreshStatus()
+        store.push({ kind: 'user', text: line })
+        await controller.submit(createUserMessage({
+          content: [{ type: 'text', text: line }],
+          source: { kind: 'user' },
+        }))
+        refreshStatus()
+      })().catch((error: unknown) => {
+        fail(error instanceof Error ? error.message : String(error), exit)
+      })
     },
   }
 

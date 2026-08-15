@@ -12,7 +12,8 @@ import { keyIntent, pickerIntent } from './keys.ts'
 import type { KeyLike } from './keys.ts'
 import { applyComposerKey, emptyEdit } from './composer.ts'
 import type { ComposerEdit } from './composer.ts'
-import { historyRank, openFilesOverlay, openHistoryOverlay, overlayKey } from './overlay.ts'
+import { editOverlayKey, historyRank, openEditOverlay, openFilesOverlay, openHistoryOverlay, overlayKey } from './overlay.ts'
+import type { EditMessageItem } from './store.ts'
 
 /** Callbacks the app needs from the agent driver. */
 export interface AppCallbacks {
@@ -34,6 +35,10 @@ export interface AppCallbacks {
   onSuggest: (line: string, cursor: number) => string[]
   /** Fuzzy-rank the project-file index for one @ search query. */
   searchFiles: (query: string) => string[]
+  /** The session's previous user messages, for the edit-and-fork overlay. */
+  editMessages: () => readonly EditMessageItem[]
+  /** Submit an edited message: the runner forks the session at its boundary first. */
+  onSubmitEdit: (line: string, forkBoundary: number) => void
   /** Resume the session highlighted in the picker. */
   onPickerSelect: (id: string) => void
   /** Fork the session highlighted in the picker and adopt the child. */
@@ -91,6 +96,10 @@ export function App({ store, callbacks }: { store: UiStore; callbacks: AppCallba
   const [selected, setSelected] = useState(0)
   const editRef = useRef<ComposerEdit>(emptyEdit())
   const keyHandlerRef = useRef<(keyInput: string, key: KeyLike) => void>(() => {})
+  /** Set while the composer holds a message loaded for edit-and-fork. */
+  const editSeqRef = useRef<number | undefined>(undefined)
+  /** The fork boundary paired with {@link editSeqRef}. */
+  const editBoundaryRef = useRef(-1)
   const promptTextRef = useRef('')
   const historyRef = useRef<string[]>([])
   const historyIndexRef = useRef(-1)
@@ -175,6 +184,21 @@ export function App({ store, callbacks }: { store: UiStore; callbacks: AppCallba
     }
     if (state.overlay !== undefined) {
       const overlay = state.overlay
+      if (overlay.kind === 'edit-message') {
+        const next = editOverlayKey(overlay, keyInput, key)
+        if (next === undefined) {
+          store.setOverlay(undefined)
+        } else if ('edit' in next) {
+          store.setOverlay(undefined)
+          editRef.current = { text: next.edit.text, cursor: next.edit.text.length, vim: 'insert' }
+          setEdit(editRef.current)
+          editSeqRef.current = next.edit.seq
+          editBoundaryRef.current = next.edit.forkBoundary
+        } else {
+          store.setOverlay(next)
+        }
+        return
+      }
       const rank = overlay.kind === 'history' ? historyRank(historyRef.current) : callbacks.searchFiles
       const next = overlayKey(overlay, keyInput, key, rank)
       if (next === undefined) {
@@ -243,7 +267,11 @@ export function App({ store, callbacks }: { store: UiStore; callbacks: AppCallba
         setEdit(result.next)
         historyRef.current = [...historyRef.current, line]
         historyIndexRef.current = -1
-        callbacks.onSubmit(line)
+        const editSeq = editSeqRef.current
+        const editBoundary = editBoundaryRef.current
+        editSeqRef.current = undefined
+        if (editSeq !== undefined) callbacks.onSubmitEdit(line, editBoundary)
+        else callbacks.onSubmit(line)
         break
       }
       case 'history-search': {
@@ -295,7 +323,11 @@ export function App({ store, callbacks }: { store: UiStore; callbacks: AppCallba
         break
       case 'suggest-up':
         if (suggestions.length > 0) setSelected(previous => Math.max(0, previous - 1))
-        else recallHistory(-1)
+        else if (editRef.current.text === '') {
+          // ↑ on an empty composer enters Codex's edit-previous-message mode.
+          const overlay = openEditOverlay(callbacks.editMessages())
+          if (overlay !== undefined) store.setOverlay(overlay)
+        } else recallHistory(-1)
         break
       case 'suggest-down':
         if (suggestions.length > 0) setSelected(previous => Math.min(Math.max(0, suggestions.length - 1), previous + 1))
@@ -318,7 +350,9 @@ export function App({ store, callbacks }: { store: UiStore; callbacks: AppCallba
     ? callbacks.onSuggest(edit.text, edit.cursor)
     : []
   const pickerRows = picker === undefined ? 0 : 2 + Math.min(picker.items.length, 12)
-  const overlayRows = overlay === undefined ? 0 : 2 + Math.min(overlay.matches.length, 8)
+  const overlayRows = overlay === undefined
+    ? 0
+    : 2 + Math.min(overlay.kind === 'edit-message' ? overlay.items.length : overlay.matches.length, 8)
   const composerRows = state.prompt === undefined ? Math.max(1, edit.text.split('\n').length) : 1
   // The conversation slice is budgeted by rendered LINES, not items: one
   // streamed assistant row can be dozens of lines tall, and an item-count
@@ -384,7 +418,18 @@ export function App({ store, callbacks }: { store: UiStore; callbacks: AppCallba
               })}
             </Box>
           )}
-          {overlay !== undefined && (
+          {overlay !== undefined && overlay.kind === 'edit-message' && (
+            <Box flexDirection="column">
+              <Box><Text bold>edit message — ↑/↓ select · Enter edit · Esc cancel</Text></Box>
+              {overlay.items.map((item, index) => {
+                const label = item.text.length > 78 ? `${item.text.slice(0, 78)}…` : item.text
+                return index === overlay.selected
+                  ? <Box key={item.seq}><Text bold>{`⏺ ${label}`}</Text></Box>
+                  : <Box key={item.seq}><Text color="grey">{`⏺ ${label}`}</Text></Box>
+              })}
+            </Box>
+          )}
+          {overlay !== undefined && overlay.kind !== 'edit-message' && (
             <Box flexDirection="column">
               <Box><Text bold>{overlay.kind === 'history' ? `history search: ${overlay.query}` : `file search: ${overlay.query}`} — ↑/↓ select · Enter reuse · Esc cancel</Text></Box>
               {overlay.matches.map((match, index) => index === overlay.selected

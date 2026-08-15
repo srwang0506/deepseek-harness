@@ -480,6 +480,56 @@ describe.skipIf(process.platform === 'win32')('tui interactive REPL (real Loader
   // semantics (queue-while-running, drain, replace, dispose-clear, and the
   // Tab-while-running App branch with its ⇥ queued status marker) are fully
   // covered by controller.spec.ts and ui-render.spec.ts instead.
+  it('edits a previous message and forks the session from it', async () => {
+    const apiKey = 'tui-editfork-key'
+    const home = join(await mkdtemp(join(tmpdir(), 'dsh-tui-home-')), '.dsh')
+    const server = await startMockLlmServer({
+      sequence: ['success'],
+      repeatLast: true,
+      apiKey,
+      successText: 'mock interactive response',
+    })
+    try {
+      const output = await runTuiPty({
+        DSH_HOME: home,
+        DEEPSEEK_API_KEY: apiKey,
+        DEEPSEEK_BASE_URL: server.baseURL,
+        DSH_TELEMETRY_DISABLED: '1',
+        NO_COLOR: '1',
+      }, [
+        { op: 'wait', text: 'dsh' },
+        { op: 'wait', text: 'deepseek-official' },
+        { op: 'send', text: 'first message\n' },
+        { op: 'wait', text: 'mock interactive response' },
+        { op: 'send', text: 'second message\n' },
+        { op: 'wait', text: 'mock interactive response', occurrences: 2 },
+        { op: 'arrow', dir: 'up' },
+        { op: 'wait', text: 'edit message' },
+        { op: 'wait', text: '⏺ second message' },
+        { op: 'send', text: '\n' },
+        // The conversation echo plus the composer holding the loaded message.
+        { op: 'wait', text: 'second message', occurrences: 2 },
+        { op: 'send', text: ' edited\n' },
+        { op: 'wait', text: 'mock interactive response', occurrences: 3 },
+        { op: 'send', text: '/quit\n' },
+        { op: 'expect-exit', code: 0 },
+      ])
+      expect(output).toContain('edit message')
+      // The session-title plugin adds one non-agent request after the first
+      // turn; the fork's own turn is the third AGENT request.
+      const agentRequests = server.requests.filter(r => JSON.stringify(r.body).includes('You are an AI agent'))
+      expect(agentRequests.length).toBe(3)
+      expect(JSON.stringify(agentRequests[2]?.body)).toContain('second message edited')
+      // The fork is durable: a child session with a parent link persists.
+      const persisted = await persistedSessions(home)
+      expect(persisted).toContain('second message edited')
+      expect(persisted).toContain('parentSession')
+    } finally {
+      await server.close()
+      await rm(home, { recursive: true, force: true })
+    }
+  }, LOADER_SMOKE_TEST_TIMEOUT_MS)
+
   it('runs multiple turns, echoes Chinese input, and flushes sessions on Ctrl+D', async () => {
     const apiKey = 'tui-multiturn-key'
     const home = join(await mkdtemp(join(tmpdir(), 'dsh-tui-home-')), '.dsh')

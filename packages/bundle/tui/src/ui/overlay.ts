@@ -9,14 +9,17 @@
 import type { KeyLike } from './keys.ts'
 import { isPrintable } from './keys.ts'
 import { fuzzyFilter } from './fuzzy.ts'
-import type { UiOverlay } from './store.ts'
+import type { EditMessageItem, UiOverlay } from './store.ts'
+
+/** A search overlay: the two overlay kinds the query-driven reducer owns. */
+export type SearchOverlay = Extract<UiOverlay, { kind: 'history' | 'files' }>
 
 /**
- * Resolve one parsed key against an open overlay. Query changes re-rank the
- * matches through the supplied rank function, so the App decides which
- * candidate source (submitted history or the project-file index) backs the
- * overlay while this reducer stays pure.
- * @param overlay - the current overlay snapshot.
+ * Resolve one parsed key against an open search overlay. Query changes
+ * re-rank the matches through the supplied rank function, so the App decides
+ * which candidate source (submitted history or the project-file index) backs
+ * the overlay while this reducer stays pure.
+ * @param overlay - the current search overlay snapshot.
  * @param keyInput - the character (or paste) string, '' for named keys.
  * @param key - the parsed key flags.
  * @param rank - resolves the ranked matches for one query string.
@@ -24,11 +27,11 @@ import type { UiOverlay } from './store.ts'
  *   `undefined` to close without inserting.
  */
 export function overlayKey(
-  overlay: UiOverlay,
+  overlay: SearchOverlay,
   keyInput: string,
   key: KeyLike,
   rank: (query: string) => string[],
-): UiOverlay | { insert: string } | undefined {
+): SearchOverlay | { insert: string } | undefined {
   if (key.escape || (key.ctrl && keyInput === 'c')) return undefined
   if (key.return || keyInput === '\r' || keyInput === '\n') {
     const match = overlay.matches[overlay.selected]
@@ -59,7 +62,7 @@ export function overlayKey(
  * @param history - submitted lines in oldest-first order.
  * @returns the overlay snapshot, or `undefined` when nothing was submitted.
  */
-export function openHistoryOverlay(history: readonly string[]): UiOverlay | undefined {
+export function openHistoryOverlay(history: readonly string[]): SearchOverlay | undefined {
   if (history.length === 0) return undefined
   return { kind: 'history', query: '', matches: historyRank(history)(''), selected: 0 }
 }
@@ -83,6 +86,47 @@ export function historyRank(history: readonly string[]): (query: string) => stri
  * @param query - the initial query text.
  * @returns the overlay snapshot.
  */
-export function openFilesOverlay(rank: (query: string) => string[], query = ''): UiOverlay {
+export function openFilesOverlay(rank: (query: string) => string[], query = ''): SearchOverlay {
   return { kind: 'files', query, matches: rank(query), selected: 0 }
+}
+
+/**
+ * Open the edit overlay over the session's previous user messages, newest
+ * first. An empty list returns `undefined` so ↑ is a no-op there.
+ * @param items - the user messages in log order.
+ * @returns the overlay snapshot, or `undefined` when nothing was submitted.
+ */
+export function openEditOverlay(items: readonly EditMessageItem[]): UiOverlay | undefined {
+  if (items.length === 0) return undefined
+  return { kind: 'edit-message', items: [...items].reverse(), selected: 0 }
+}
+
+/**
+ * Resolve one parsed key against an open edit overlay: arrows move the
+ * selection, Enter returns the chosen message for the composer to edit, and
+ * Esc/Ctrl+C close without editing.
+ * @param overlay - the edit overlay snapshot.
+ * @param keyInput - the character (or paste) string, '' for named keys.
+ * @param key - the parsed key flags.
+ * @returns the next overlay, the message to edit, or `undefined` to close.
+ */
+export function editOverlayKey(
+  overlay: Extract<UiOverlay, { kind: 'edit-message' }>,
+  keyInput: string,
+  key: KeyLike,
+): Extract<UiOverlay, { kind: 'edit-message' }> | { edit: EditMessageItem } | undefined {
+  if (key.escape || (key.ctrl && keyInput === 'c')) return undefined
+  if (key.return || keyInput === '\r' || keyInput === '\n') {
+    const item = overlay.items[overlay.selected]
+    return item === undefined ? undefined : { edit: item }
+  }
+  if (key.upArrow) {
+    if (overlay.items.length === 0) return overlay
+    return { ...overlay, selected: (overlay.selected - 1 + overlay.items.length) % overlay.items.length }
+  }
+  if (key.downArrow) {
+    if (overlay.items.length === 0) return overlay
+    return { ...overlay, selected: (overlay.selected + 1) % overlay.items.length }
+  }
+  return overlay
 }

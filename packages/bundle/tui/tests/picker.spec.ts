@@ -1,14 +1,20 @@
 /** Session-picker data: listing with folded titles and fork-by-id. */
 
+import { mkdtempSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import AgentRegistry, { Inbox } from '@deepseek-ai/dsh-agent'
 import type { Agent, AgentHandle, CreateAgentOptions } from '@deepseek-ai/dsh-agent'
 import AgentDefaultModelConfig from '@deepseek-ai/dsh-agent-default-model'
+import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
 import type { SessionHeader } from '@deepseek-ai/dsh-session'
 import type { SessionTitleSnapshot } from '@deepseek-ai/dsh-session-title'
 import type {} from '@deepseek-ai/dsh-session-query'
+import JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
+import type {} from '@deepseek-ai/dsh-session-persistence'
 import { forkSessionById, pickerSessions } from '../src/index.ts'
 
 /** A minimal SessionHeader for picker rows. */
@@ -117,6 +123,7 @@ describe('forkSessionById', () => {
       },
       async resume(ownerCtx: Context, options: CreateAgentOptions & { resumeSessionId: SessionId }): Promise<AgentHandle> {
         const base = ctx.sessions.get(options.resumeSessionId) ?? ctx.sessions.create(options.resumeSessionId, {})
+        if (base.events.length === 0) base.append('turn/start', { turn: 0 })
         const agent = {} as Agent
         const agentCtx = ownerCtx.extend({ agent })
         Object.assign(agent, {
@@ -144,41 +151,61 @@ describe('forkSessionById', () => {
     return records
   }
 
-  it('forks a live session directly', async () => {
+  it('forks a live session through the persistence backend, honoring the boundary', async () => {
     const ctx = new Context()
+    const root = mkdtempSync(join(tmpdir(), 'dsh-fork-live-'))
     await ctx.plugin(SessionStore)
-    await ctx.plugin(AgentRegistry)
-    await ctx.plugin(AgentDefaultModelConfig, { provider: 'p', model: 'm' })
-    await mountAgents(ctx)
-    ctx.sessions.create(SessionId('session-live'), { meta: { cwd: '/tmp/x' } })
-    const childId = await forkSessionById(ctx, 'session-live')
-    const child = ctx.sessions.get(SessionId(childId))
-    expect(child).toBeDefined()
-    expect(child?.header.parentSession).toBe(SessionId('session-live'))
-    expect(child?.header.cwd).toBe('/tmp/x')
-    expect(child?.id).not.toBe(SessionId('session-live'))
+    await ctx.plugin(JsonlSessionPersistence, { root })
+    const source = ctx.sessions.create(SessionId('session-live'), { meta: { cwd: '/tmp/x' } })
+    source.append('turn/start', { turn: 0 })
+    source.append('step/start', { turn: 0, step: 0 })
+    source.append('user/message', createUserMessage({
+      content: [{ type: 'text', text: 'hello' }],
+      source: { kind: 'user' },
+    }), { surfaceOp: 'append' })
+    source.append('step/end', { turn: 0, step: 0 })
+    source.append('turn/end', { turn: 0, reason: { kind: 'completed' } })
+    const childId = await forkSessionById(ctx, 'session-live', 2)
+    // The child is never live: it resumes through the persistence path.
+    expect(ctx.sessions.get(SessionId(childId))).toBeUndefined()
+    const raw = await ctx.sessionPersistence.readRaw(SessionId(childId))
+    expect(raw?.meta.parentSession).toBe(SessionId('session-live'))
+    expect(raw?.meta.cwd).toBe('/tmp/x')
+    expect(raw?.content).toContain('hello')
+    // The boundary cuts the seed before the step/end and turn/end.
+    expect(raw?.content).not.toContain('"step/end"')
     await ctx.fiber.dispose()
   })
 
   it('loads a persisted session, forks it, and disposes the loaded source', async () => {
     const ctx = new Context()
+    const root = mkdtempSync(join(tmpdir(), 'dsh-fork-persisted-'))
     await ctx.plugin(SessionStore)
     await ctx.plugin(AgentRegistry)
     await ctx.plugin(AgentDefaultModelConfig, { provider: 'p', model: 'm' })
+    await ctx.plugin(JsonlSessionPersistence, { root })
     const records = await mountAgents(ctx)
+    await ctx.sessionPersistence.create({ version: 0, id: SessionId('session-persisted'), createdAt: 1 })
     const childId = await forkSessionById(ctx, 'session-persisted')
     expect(childId).not.toBe('session-persisted')
     expect(records).toHaveLength(1)
     expect(records[0]?.disposed).toBe(true)
-    const child = ctx.sessions.get(SessionId(childId))
-    expect(child?.header.parentSession).toBe(SessionId('session-persisted'))
+    const raw = await ctx.sessionPersistence.readRaw(SessionId(childId))
+    expect(raw?.meta.parentSession).toBe(SessionId('session-persisted'))
     await ctx.fiber.dispose()
   })
 
-  it('fails loud when the agents registry is absent for a persisted source', async () => {
+  it('fails loud when session persistence is absent, and when the agents registry is absent', async () => {
     const ctx = new Context()
     await ctx.plugin(SessionStore)
-    await expect(forkSessionById(ctx, 'session-persisted')).rejects.toThrow(/agents registry is not mounted/)
+    await expect(forkSessionById(ctx, 'session-persisted')).rejects.toThrow(/session persistence is not mounted/)
     await ctx.fiber.dispose()
+
+    const other = new Context()
+    const root = mkdtempSync(join(tmpdir(), 'dsh-fork-noagents-'))
+    await other.plugin(SessionStore)
+    await other.plugin(JsonlSessionPersistence, { root })
+    await expect(forkSessionById(other, 'session-persisted')).rejects.toThrow(/agents registry is not mounted/)
+    await other.fiber.dispose()
   })
 })
