@@ -47,3 +47,4 @@
         output: !!js ctx.tuiStartup.output ?? 'text'
         images: !!js ctx.tuiStartup.images ?? []
         ephemeral: !!js ctx.tuiStartup.ephemeral ?? false
+        resumePicker: !!js ctx.tuiStartup.resumePicker ?? false

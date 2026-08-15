@@ -19,6 +19,7 @@ type PtyStep =
   | { op: 'sleep'; seconds: number }
   | { op: 'send'; text: string }
   | { op: 'ctrl'; char: string }
+  | { op: 'arrow'; dir: 'up' | 'down' }
   | { op: 'expect-exit'; code: number }
 
 /**
@@ -96,6 +97,14 @@ for step in json.loads(steps_json):
         keys = [*text]
         for index, char in enumerate(keys):
             payload = "\r" if char == "\n" else char
+            if char == "\n":
+                # Settle after the previous key's rendered frame before the
+                # CR: under load the child's read can lag the render, and a
+                # CR landing before the prior chunk is read coalesces with it
+                # and is dropped by Ink's single-keypress parser.
+                settle_deadline = time.monotonic() + 1.0
+                while time.monotonic() < settle_deadline:
+                    pump()
             before = len(output)
             os.write(fd, payload.encode("utf-8"))
             echo_deadline = time.monotonic() + 10
@@ -113,6 +122,18 @@ for step in json.loads(steps_json):
     elif op == "ctrl":
         # The control byte for Ctrl+<char>, e.g. 'c' -> 0x03, 'd' -> 0x04.
         os.write(fd, bytes([ord(step["char"]) & 0x1F]))
+    elif op == "arrow":
+        # Echo-wait like a typed key: an Enter written before the child reads
+        # the escape sequence would coalesce into one chunk that Ink parses
+        # as a single arrow keypress, dropping the trailing CR.
+        before = len(output)
+        os.write(fd, b"\x1b[A" if step["dir"] == "up" else b"\x1b[B")
+        echo_deadline = time.monotonic() + 10
+        while len(output) <= before and time.monotonic() < echo_deadline:
+            pump()
+            waited, candidate = os.waitpid(pid, os.WNOHANG)
+            if waited == pid:
+                break
     elif op == "expect-exit":
         exit_code = step["code"]
         break
@@ -133,7 +154,7 @@ if actual_exit != exit_code:
     sys.exit(125)
 `
 
-async function runTuiPty(env: Record<string, string>, steps: readonly PtyStep[]): Promise<string> {
+async function runTuiPty(env: Record<string, string>, steps: readonly PtyStep[], extraArgs: readonly string[] = []): Promise<string> {
   const cwd = await mkdtemp(join(tmpdir(), 'dsh-tui-interactive-'))
   const launch = resolveExampleLaunch({
     srcBin: dshBinScript,
@@ -147,7 +168,7 @@ async function runTuiPty(env: Record<string, string>, steps: readonly PtyStep[])
       '-c',
       POSIX_TUI_PTY_DRIVER,
       launch.command,
-      JSON.stringify(launch.args),
+      JSON.stringify([...launch.args, ...extraArgs]),
       JSON.stringify(launch.env),
       cwd,
       String(timeoutMs / 1_000),
@@ -166,6 +187,31 @@ async function runTuiPty(env: Record<string, string>, steps: readonly PtyStep[])
       throw new Error(`dsh tui PTY driver exited ${String(result.exitCode)}. stdout:\n${result.stdout}\nstderr:\n${result.stderr}`)
     }
     return result.stdout
+  } finally {
+    await rm(cwd, { recursive: true, force: true })
+  }
+}
+
+/** Seed one persisted session through `dsh exec` against the shared home. */
+async function runDshOneShot(env: Record<string, string>, task: string): Promise<void> {
+  const cwd = await mkdtemp(join(tmpdir(), 'dsh-tui-seed-'))
+  const launch = resolveExampleLaunch({
+    srcBin: dshBinScript,
+    configArgs: [],
+    tsconfigPath,
+    env,
+  })
+  try {
+    const result = await execa(launch.command, [...launch.args, 'exec', task], {
+      cwd,
+      env: launch.env,
+      timeout: 60_000,
+      reject: false,
+      stripFinalNewline: false,
+    })
+    if (result.failed) {
+      throw new Error(`dsh exec seed failed (exit ${String(result.exitCode)}): ${result.stderr}`)
+    }
   } finally {
     await rm(cwd, { recursive: true, force: true })
   }
@@ -347,6 +393,75 @@ describe.skipIf(process.platform === 'win32')('tui interactive REPL (real Loader
       await rm(home, { recursive: true, force: true })
     }
   }, LOADER_SMOKE_TEST_TIMEOUT_MS)
+
+  it('dsh resume --last replays the most recent persisted transcript', async () => {
+    const apiKey = 'tui-resume-last-key'
+    const home = join(await mkdtemp(join(tmpdir(), 'dsh-tui-home-')), '.dsh')
+    const server = await startMockLlmServer({
+      sequence: ['success'],
+      repeatLast: true,
+      apiKey,
+      successText: 'mock interactive response',
+    })
+    const env = {
+      DSH_HOME: home,
+      DEEPSEEK_API_KEY: apiKey,
+      DEEPSEEK_BASE_URL: server.baseURL,
+      DSH_TELEMETRY_DISABLED: '1',
+      NO_COLOR: '1',
+    }
+    try {
+      await runDshOneShot(env, 'seed the resume-last session')
+      const output = await runTuiPty(env, [
+        { op: 'wait', text: '>' },
+        { op: 'wait', text: 'deepseek-official' },
+        { op: 'wait', text: '› seed the resume-last session' },
+        { op: 'send', text: '/quit\n' },
+        { op: 'expect-exit', code: 0 },
+      ], ['resume', '--last'])
+      expect(output).toContain('› seed the resume-last session')
+    } finally {
+      await server.close()
+      await rm(home, { recursive: true, force: true })
+    }
+  }, LOADER_SMOKE_TEST_TIMEOUT_MS * 2)
+
+  it('dsh resume opens the session picker and resumes the selected session', async () => {
+    const apiKey = 'tui-picker-key'
+    const home = join(await mkdtemp(join(tmpdir(), 'dsh-tui-home-')), '.dsh')
+    const server = await startMockLlmServer({
+      sequence: ['success'],
+      repeatLast: true,
+      apiKey,
+      successText: 'mock interactive response',
+    })
+    const env = {
+      DSH_HOME: home,
+      DEEPSEEK_API_KEY: apiKey,
+      DEEPSEEK_BASE_URL: server.baseURL,
+      DSH_TELEMETRY_DISABLED: '1',
+      NO_COLOR: '1',
+    }
+    try {
+      await runDshOneShot(env, 'seed the older picker session')
+      await runDshOneShot(env, 'seed the newer picker session')
+      const output = await runTuiPty(env, [
+        { op: 'wait', text: '>' },
+        { op: 'wait', text: 'Resume session' },
+        // Newest first: move to the older session and resume it.
+        { op: 'arrow', dir: 'down' },
+        { op: 'send', text: '\n' },
+        { op: 'wait', text: '› seed the older picker session' },
+        { op: 'send', text: '/quit\n' },
+        { op: 'expect-exit', code: 0 },
+      ], ['resume'])
+      expect(output).toContain('Resume session')
+      expect(output).toContain('› seed the older picker session')
+    } finally {
+      await server.close()
+      await rm(home, { recursive: true, force: true })
+    }
+  }, LOADER_SMOKE_TEST_TIMEOUT_MS * 3)
 
   it('Ctrl+C cancels only the running turn, then keeps the session usable', async () => {
     const apiKey = 'tui-cancel-key'

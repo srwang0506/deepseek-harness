@@ -19,6 +19,9 @@ function callbacks(overrides: Partial<AppCallbacks> = {}): AppCallbacks {
     onComplete: () => undefined,
     onCancel: () => {},
     onSuggest: () => [],
+    onPickerSelect: () => {},
+    onPickerFork: () => {},
+    onPickerCancel: () => {},
     ...overrides,
   }
 }
@@ -56,6 +59,42 @@ describe('App', () => {
     const frame = lastFrame() ?? ''
     expect(frame).toContain('deepseek-v4-flash')
     expect(frame).toContain('hello')
+  })
+
+  it('renders the session picker overlay with a highlighted row', () => {
+    const store = new UiStore()
+    store.setPicker({
+      items: [
+        { id: 'session-a', title: 'First session', cwd: '/tmp/a', createdAt: 42, live: false },
+        { id: 'session-b', title: 'Second session', cwd: '/tmp/b', createdAt: 41, live: false },
+      ],
+      selected: 0,
+    })
+    const { lastFrame } = render(h(App, { store, callbacks: callbacks() }))
+    const frame = lastFrame() ?? ''
+    expect(frame).toContain('Resume session')
+    expect(frame).toContain('First session')
+    expect(frame).toContain('Second session')
+  })
+
+  it('moves the picker highlight with the arrow keys', async () => {
+    const store = new UiStore()
+    store.setPicker({
+      items: [
+        { id: 'session-a', title: 'First session', cwd: '/tmp/a', createdAt: 42, live: false },
+        { id: 'session-b', title: 'Second session', cwd: '/tmp/b', createdAt: 41, live: false },
+      ],
+      selected: 0,
+    })
+    const { stdin } = render(h(App, { store, callbacks: callbacks() }))
+    // Ink attaches its stdin listener in a passive effect; give it a tick.
+    await new Promise<void>((resolve) => { setImmediate(resolve) })
+    stdin.write('\u001b[B')
+    await new Promise<void>((resolve) => { setImmediate(resolve) })
+    expect(store.getSnapshot().picker?.selected).toBe(1)
+    stdin.write('\u001b[B')
+    await new Promise<void>((resolve) => { setImmediate(resolve) })
+    expect(store.getSnapshot().picker?.selected).toBe(0)
   })
 
   it('shows suggestion rows above the input', () => {

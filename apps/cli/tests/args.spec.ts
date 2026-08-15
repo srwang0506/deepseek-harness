@@ -68,6 +68,19 @@ describe('parseDshArgs', () => {
     expect(exitCode(['exec'])).toBe(1)
   })
 
+  it('routes the resume subcommand into the tui profile', () => {
+    expect(parse(['resume']))
+      .toEqual({ mode: 'profile', profile: 'tui', patches: [], args: ['--resume-picker'] })
+    expect(parse(['resume', '--last']))
+      .toEqual({ mode: 'profile', profile: 'tui', patches: [], args: ['--continue'] })
+    expect(parse(['resume', '-l']))
+      .toEqual({ mode: 'profile', profile: 'tui', patches: [], args: ['--continue'] })
+    expect(parse(['resume', 'session-abc']))
+      .toEqual({ mode: 'profile', profile: 'tui', patches: [], args: ['--resume', 'session-abc'] })
+    expect(() => parse(['resume', 'session-abc', '--last'])).toThrow()
+    expect(exitCode(['resume', 'session-abc', '--last'])).toBe(1)
+  })
+
   it('routes the plugin pnpm forwarder', () => {
     expect(parse(['plugin', '--profile', 'tui', 'add', 'turtle-ui']))
       .toEqual({ mode: 'plugin', profile: 'tui', args: ['add', 'turtle-ui'] })

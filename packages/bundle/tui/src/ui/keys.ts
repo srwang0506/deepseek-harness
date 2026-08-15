@@ -49,6 +49,31 @@ export type KeyIntent =
   | { type: 'append-and-submit'; text: string }
   | { type: 'none' }
 
+/** What one key should do while the session picker is open. */
+export type PickerIntent =
+  | { type: 'picker-up' }
+  | { type: 'picker-down' }
+  | { type: 'picker-select' }
+  | { type: 'picker-fork' }
+  | { type: 'picker-cancel' }
+  | { type: 'none' }
+
+/**
+ * Resolve one keypress into a picker intent: arrows move the highlight, Enter
+ * resumes the selection, `f` forks it, and Esc cancels.
+ * @param keyInput - the character (or paste) string, '' for named keys.
+ * @param key - the parsed key flags.
+ * @returns the intent the app should apply.
+ */
+export function pickerIntent(keyInput: string, key: KeyLike): PickerIntent {
+  if (key.upArrow) return { type: 'picker-up' }
+  if (key.downArrow) return { type: 'picker-down' }
+  if (key.return) return { type: 'picker-select' }
+  if (key.escape) return { type: 'picker-cancel' }
+  if (keyInput === 'f' && !key.ctrl && !key.meta) return { type: 'picker-fork' }
+  return { type: 'none' }
+}
+
 /** Whether the key is a plain printable character (not a named/control key). */
 function isPrintable(keyInput: string, key: KeyLike): boolean {
   return keyInput !== ''

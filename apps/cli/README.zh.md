@@ -11,6 +11,9 @@
 | `dsh` | 启动交互式终端客户端（默认的 `tui` profile）。 |
 | `dsh exec "job"` | 回答一个任务，打印最终答案并退出（一次性模式）。 |
 | `dsh "job"` | `dsh exec "job"` 的别名。 |
+| `dsh resume` | 打开会话选择器并继续所选会话。 |
+| `dsh resume --last` | 继续最近的持久化会话。 |
+| `dsh resume <id>` | 继续指定 id 的持久化会话。 |
 | `dsh --profile <name>` | 启动位于 `$DSH_HOME/profiles/<name>` 的指定 profile。 |
 | `dsh --profile headless "job"` | 运行一个全新的持久化会话，打印最终答案并退出。 |
 | `dsh web` | `--profile web` 的别名。 |

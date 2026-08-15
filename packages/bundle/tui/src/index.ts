@@ -23,7 +23,8 @@ import type {} from '@deepseek-ai/dsh-agent-default-model'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
 import { SessionId } from '@deepseek-ai/dsh-session'
-import type { Session, SessionEvent, TurnEndReason } from '@deepseek-ai/dsh-session'
+import type { Session, SessionEvent, SessionHeader, TurnEndReason } from '@deepseek-ai/dsh-session'
+import type {} from '@deepseek-ai/dsh-session-query'
 import type {} from '@deepseek-ai/cordis-plugin-loader'
 import type {} from '@deepseek-ai/dsh-cmdline'
 import type {} from '@deepseek-ai/dsh-user-approval'
@@ -74,6 +75,8 @@ export interface Config {
   images: string[]
   /** Delete the persisted session after a one-shot run. */
   ephemeral: boolean
+  /** Open the session picker instead of adopting a session at startup. */
+  resumePicker: boolean
 }
 
 export const Config: z<Config> = z.object({
@@ -84,6 +87,7 @@ export const Config: z<Config> = z.object({
   output: z.union([z.const('text'), z.const('json'), z.const('jsonl')]).default('text'),
   images: z.array(z.string()).default([]),
   ephemeral: z.boolean().default(false),
+  resumePicker: z.boolean().default(false),
 })
 
 /** The process streams the runner reads/writes; tests substitute captures. */
@@ -209,6 +213,69 @@ async function mostRecentSession(ctx: Context): Promise<string> {
   return candidates[0]?.id ?? ''
 }
 
+/**
+ * List the sessions the picker offers, newest first, skipping subagents.
+ * @param ctx - plugin context carrying the query/persistence services.
+ * @returns picker rows: id, folded title, cwd, creation time, and live flag.
+ */
+export async function pickerSessions(ctx: Context): Promise<Array<{
+  id: string
+  title: string | undefined
+  cwd: string | undefined
+  createdAt: number
+  live: boolean
+}>> {
+  const query = ctx.get('sessionQuery')
+  const records = query !== undefined ? await query.listSessions() : []
+  const persistence = ctx.get('sessionPersistence')
+  const headers: SessionHeader[] = records.length > 0
+    ? records.map(record => record.header)
+    : (await persistence?.list() ?? [])
+  const candidates = headers.filter(header => header.origin !== 'subagent')
+  candidates.sort((a, b) => b.createdAt - a.createdAt)
+  const titles = new Map<string, string>()
+  if (query !== undefined && candidates.length > 0) {
+    const folded = await query.readTitleSnapshots(candidates.map(header => SessionId(header.id)))
+    for (let index = 0; index < candidates.length; index++) {
+      const result = folded[index]
+      const header = candidates[index]
+      if (result !== undefined && result.status === 'fulfilled' && header !== undefined) {
+        const snapshot = result.value.title
+        if (snapshot !== undefined) titles.set(header.id, snapshot.title)
+      }
+    }
+  }
+  return candidates.map(header => ({
+    id: header.id,
+    title: titles.get(header.id),
+    cwd: header.cwd,
+    createdAt: header.createdAt,
+    live: records.some(record => record.header.id === header.id && record.live),
+  }))
+}
+
+/**
+ * Fork one session by id: live sessions fork directly; persisted sessions
+ * load through the agents registry, fork, and dispose the loaded source.
+ * @param ctx - plugin context carrying the sessions/agents registries.
+ * @param id - the session to fork.
+ * @returns the child session id.
+ */
+export async function forkSessionById(ctx: Context, id: string): Promise<string> {
+  const sessions = ctx.get('sessions')
+  if (sessions === undefined) throw new Error('tui-runner: the sessions registry is not mounted')
+  const live = sessions.get(SessionId(id))
+  if (live !== undefined) return sessions.fork(live).id
+  const agents = ctx.get('agents')
+  if (agents === undefined) throw new Error('tui-runner: the agents registry is not mounted')
+  const handle = await agents.resume({ resumeSessionId: SessionId(id), agentOptions: {}, setup: () => {} })
+  try {
+    return sessions.fork(handle.agent.session).id
+  } finally {
+    await handle.dispose()
+  }
+}
+
 /** Default AGENTS.md written by /init when none exists. */
 const AGENTS_TEMPLATE = '# AGENTS.md\n\nInstructions for AI coding agents working in this repository.\n\nAdd project-specific conventions, commands, and guidelines here.\n'
 
@@ -217,7 +284,7 @@ function helpText(): string {
   return [
     'Commands:',
     '  /new              start a fresh session',
-    '  /resume [id]      list sessions, or resume the given id',
+    '  /resume [id]      open the session picker, or resume the given id',
     '  /model [model]    show the model, or switch it',
     '  /login [method]   log into OpenAI GPT (browser, device, api-key)',
     '  /logout           remove the OpenAI GPT credential',
@@ -689,6 +756,35 @@ async function runInteractive(ctx: Context, config: Config, exit: (code: number)
 
   let quitResolve: (() => void) | undefined
   const quitPromise = new Promise<void>((resolve) => { quitResolve = resolve })
+
+  /** Open the session picker, or fall back to a fresh session when nothing is persisted. */
+  const openPicker = async (): Promise<void> => {
+    const candidates = await pickerSessions(ctx)
+    if (candidates.length === 0) {
+      store.push({ kind: 'info', text: '(no persisted sessions)' })
+      if (controller.live() === undefined) {
+        await controller.start('')
+        refreshStatus()
+      }
+      return
+    }
+    store.setPicker({ items: candidates, selected: 0 })
+  }
+
+  /** Adopt one picker selection, forking it first when asked. */
+  const adoptFromPicker = async (id: string, forkFirst: boolean): Promise<void> => {
+    store.setPicker(undefined)
+    if (forkFirst) {
+      const childId = await forkSessionById(ctx, id)
+      await controller.replace(childId)
+      refreshStatus()
+      store.push({ kind: 'info', text: `forked ${childId} from ${id}` })
+      return
+    }
+    await controller.replace(id)
+    refreshStatus()
+    store.push({ kind: 'info', text: `resumed session ${id}` })
+  }
   // `--image` files attach to the first submitted message, then are consumed.
   let pendingImages: readonly string[] = config.images
 
@@ -792,14 +888,13 @@ async function runInteractive(ctx: Context, config: Config, exit: (code: number)
           return
         }
         case 'resume': {
-          const id = slash.args === '' ? await mostRecentSession(ctx) : slash.args
-          if (id === '') {
-            store.push({ kind: 'error', text: 'no session to resume' })
+          if (slash.args === '') {
+            await openPicker()
             return
           }
-          await controller.replace(id)
+          await controller.replace(slash.args)
           refreshStatus()
-          store.push({ kind: 'info', text: `resumed session ${id}` })
+          store.push({ kind: 'info', text: `resumed session ${slash.args}` })
           return
         }
         case 'status': {
@@ -958,6 +1053,24 @@ async function runInteractive(ctx: Context, config: Config, exit: (code: number)
       const agent = controller.live()
       return agent === undefined ? [] : suggestionsFor(ctx, agent, line, cursor)
     },
+    onPickerSelect: (id) => {
+      void adoptFromPicker(id, false).catch((error: unknown) => {
+        fail(error instanceof Error ? error.message : String(error), exit)
+      })
+    },
+    onPickerFork: (id) => {
+      void adoptFromPicker(id, true).catch((error: unknown) => {
+        fail(error instanceof Error ? error.message : String(error), exit)
+      })
+    },
+    onPickerCancel: () => {
+      store.setPicker(undefined)
+      if (controller.live() === undefined) {
+        void controller.start('').then(() => { refreshStatus() }).catch((error: unknown) => {
+          fail(error instanceof Error ? error.message : String(error), exit)
+        })
+      }
+    },
   }
 
   let instance: ReturnType<typeof mountApp>
@@ -976,8 +1089,13 @@ async function runInteractive(ctx: Context, config: Config, exit: (code: number)
   instance = mountApp(store, callbacks)
 
   try {
-    await controller.start(resumeSessionId)
-    refreshStatus()
+    if (config.resumePicker) {
+      await openPicker()
+      refreshStatus()
+    } else {
+      await controller.start(resumeSessionId)
+      refreshStatus()
+    }
     await quitPromise
   } finally {
     instance.unmount()

@@ -2842,10 +2842,12 @@ export interface Config {
   images: string[]
   /** Delete the persisted session after a one-shot run. */
   ephemeral: boolean
+  /** Open the session picker instead of adopting a session at startup. */
+  resumePicker: boolean
 }
 ```
 
-Source: [`packages/bundle/tui/src/index.ts:62`](../packages/bundle/tui/src/index.ts)
+Source: [`packages/bundle/tui/src/index.ts:63`](../packages/bundle/tui/src/index.ts)
 
 <a id="deepseek-aidsh-typert-loader"></a>
 

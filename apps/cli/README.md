@@ -11,6 +11,9 @@ The `dsh` command is an interactive Codex-style coding terminal client, plus the
 | `dsh` | Start the interactive terminal client (the default `tui` profile). |
 | `dsh exec "job"` | Answer one task, print the final answer, and exit (one-shot). |
 | `dsh "job"` | Alias of `dsh exec "job"`. |
+| `dsh resume` | Open the session picker and continue the selected session. |
+| `dsh resume --last` | Continue the most recent persisted session. |
+| `dsh resume <id>` | Continue the named persisted session. |
 | `dsh --profile <name>` | Boot the named profile under `$DSH_HOME/profiles/<name>`. |
 | `dsh --profile headless "job"` | Run one fresh persisted session, print the final answer, and exit. |
 | `dsh web` | Alias of `--profile web`. |

@@ -35,6 +35,8 @@ export interface TuiStartupValues {
   images: string[]
   /** Delete the persisted session after a one-shot run. */
   ephemeral: boolean
+  /** Open the session picker instead of adopting a session at startup. */
+  resumePicker: boolean
 }
 
 /** The flag family as commander parsed it. */
@@ -46,6 +48,7 @@ interface TuiOptions {
   jsonl?: boolean
   image?: string[]
   ephemeral?: boolean
+  resumePicker?: boolean
 }
 
 /** Repeatable single-value collector: `--image a.png --image b.png`. */
@@ -68,6 +71,7 @@ function tuiCommand(): Command {
     .option('--jsonl', 'one-shot: stream session events as JSON lines')
     .option('-i, --image <path>', 'attach an image file (png/jpeg/webp/gif; repeatable)', collectImages, [])
     .option('--ephemeral', 'one-shot: delete the persisted session after the run')
+    .option('--resume-picker', 'open the session picker on startup (dsh resume)')
     .addHelpText('after', `
 Examples:
   dsh                              start an interactive session
@@ -78,6 +82,8 @@ Examples:
   dsh exec -i shot.png "fix this UI"  one task with an attached image
   dsh --resume <session-id>        resume an earlier session interactively
   dsh --continue                   resume the most recent session
+  dsh resume                       pick a session to resume from a list
+  dsh resume --last                resume the most recent session
   dsh -m deepseek-chat "hi"        one task with a specific model
 
 Interactive commands:
@@ -127,6 +133,7 @@ export function apply(ctx: Context): void {
       task: program.args.join(' '),
       resumeSessionId: options.resume ?? '',
       continue: options.continue === true,
+      resumePicker: options.resumePicker === true,
       model: options.model ?? '',
       output: options.jsonl === true ? 'jsonl' : options.json === true ? 'json' : 'text',
       images: options.image ?? [],

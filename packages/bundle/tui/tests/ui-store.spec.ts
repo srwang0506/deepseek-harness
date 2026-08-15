@@ -59,6 +59,15 @@ describe('UiStore', () => {
     store.dismissPrompt()
   })
 
+  it('holds a session picker snapshot and clears it', () => {
+    const store = new UiStore()
+    const items = [{ id: 's1', title: 'First', cwd: '/tmp/a', createdAt: 1, live: false }]
+    store.setPicker({ items, selected: 0 })
+    expect(store.getSnapshot().picker).toEqual({ items, selected: 0 })
+    store.setPicker(undefined)
+    expect(store.getSnapshot().picker).toBeUndefined()
+  })
+
   it('unsubscribes listeners', () => {
     const store = new UiStore()
     const seen: number[] = []

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { keyIntent, type KeyLike, type PromptMode } from '../src/ui/keys.ts'
+import { keyIntent, pickerIntent, type KeyLike, type PromptMode } from '../src/ui/keys.ts'
 
 function key(partial: Partial<KeyLike> = {}): KeyLike {
   return {
@@ -65,6 +65,16 @@ describe('keyIntent', () => {
     expect(keyIntent('\n', key(), undefined, '')).toEqual({ type: 'submit' })
     expect(keyIntent('\n', key(), choice(['y', 'n']), '')).toEqual({ type: 'prompt-answer', value: '\r' })
     expect(keyIntent('\n', key(), text(), 'typed')).toEqual({ type: 'prompt-return' })
+  })
+
+  it('maps picker keys to picker intents', () => {
+    expect(pickerIntent('', key({ upArrow: true }))).toEqual({ type: 'picker-up' })
+    expect(pickerIntent('', key({ downArrow: true }))).toEqual({ type: 'picker-down' })
+    expect(pickerIntent('', key({ return: true }))).toEqual({ type: 'picker-select' })
+    expect(pickerIntent('', key({ escape: true }))).toEqual({ type: 'picker-cancel' })
+    expect(pickerIntent('f', key())).toEqual({ type: 'picker-fork' })
+    expect(pickerIntent('f', key({ ctrl: true }))).toEqual({ type: 'none' })
+    expect(pickerIntent('x', key())).toEqual({ type: 'none' })
   })
 
   it('routes the arrow keys and ignores other named keys', () => {

@@ -16,6 +16,28 @@ export interface UiItem {
   text: string
 }
 
+/** One selectable session in the resume picker. */
+export interface PickerItem {
+  /** Session id; resumed on selection. */
+  id: string
+  /** Latest folded title, when the log carries one. */
+  title: string | undefined
+  /** The session's working directory, when recorded. */
+  cwd: string | undefined
+  /** Creation time in epoch milliseconds. */
+  createdAt: number
+  /** Whether the id currently has a live store entry. */
+  live: boolean
+}
+
+/** The session picker overlay: an ordered list with one highlighted row. */
+export interface UiPicker {
+  /** Sessions to choose from, newest first. */
+  items: readonly PickerItem[]
+  /** Highlighted item index. */
+  selected: number
+}
+
 /** An approval or question awaiting a terminal answer. */
 export type UiPrompt = PromptMode & {
   /** The question line. */
@@ -30,6 +52,7 @@ export interface UiState {
   status: string
   running: boolean
   prompt: UiPrompt | undefined
+  picker: UiPicker | undefined
 }
 
 type Listener = () => void
@@ -40,7 +63,7 @@ type Listener = () => void
  * `useSyncExternalStore`.
  */
 export class UiStore {
-  private state: UiState = { items: [], status: '', running: false, prompt: undefined }
+  private state: UiState = { items: [], status: '', running: false, prompt: undefined, picker: undefined }
   private listeners = new Set<Listener>()
   private nextKey = 1
 
@@ -104,6 +127,14 @@ export class UiStore {
    */
   setPrompt(prompt: UiPrompt | undefined): void {
     this.publish({ ...this.state, prompt })
+  }
+
+  /**
+   * Set, replace, or clear the session picker overlay.
+   * @param picker - the picker snapshot to show, or `undefined` to close it.
+   */
+  setPicker(picker: UiPicker | undefined): void {
+    this.publish({ ...this.state, picker })
   }
 
   /**

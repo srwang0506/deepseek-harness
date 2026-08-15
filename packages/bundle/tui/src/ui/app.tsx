@@ -8,7 +8,7 @@ import React, { useRef, useState, useSyncExternalStore } from 'react'
 import { Box, Text, render, useInput } from 'ink'
 import type { UiStore, UiItem } from './store.ts'
 import { DiffView, MarkdownView } from './rich.tsx'
-import { keyIntent } from './keys.ts'
+import { keyIntent, pickerIntent } from './keys.ts'
 
 /** Callbacks the app needs from the agent driver. */
 export interface AppCallbacks {
@@ -26,6 +26,12 @@ export interface AppCallbacks {
   onCancel: () => void
   /** Suggest completions for the current line (slash commands or @-paths). */
   onSuggest: (line: string, cursor: number) => string[]
+  /** Resume the session highlighted in the picker. */
+  onPickerSelect: (id: string) => void
+  /** Fork the session highlighted in the picker and adopt the child. */
+  onPickerFork: (id: string) => void
+  /** Close the picker without adopting anything. */
+  onPickerCancel: () => void
 }
 
 /** Color each row by its presentation kind. */
@@ -103,6 +109,35 @@ export function App({ store, callbacks }: { store: UiStore; callbacks: AppCallba
   }
 
   useInput((keyInput, key) => {
+    if (state.picker !== undefined) {
+      const picker = pickerIntent(keyInput, key)
+      switch (picker.type) {
+        case 'picker-up': {
+          const length = state.picker.items.length
+          store.setPicker({ ...state.picker, selected: (state.picker.selected - 1 + length) % length })
+          break
+        }
+        case 'picker-down':
+          store.setPicker({ ...state.picker, selected: (state.picker.selected + 1) % state.picker.items.length })
+          break
+        case 'picker-select': {
+          const chosen = state.picker.items[state.picker.selected]
+          if (chosen !== undefined) callbacks.onPickerSelect(chosen.id)
+          break
+        }
+        case 'picker-fork': {
+          const chosen = state.picker.items[state.picker.selected]
+          if (chosen !== undefined) callbacks.onPickerFork(chosen.id)
+          break
+        }
+        case 'picker-cancel':
+          callbacks.onPickerCancel()
+          break
+        case 'none':
+          break
+      }
+      return
+    }
     const intent = keyIntent(keyInput, key, state.prompt, promptTextRef.current)
     switch (intent.type) {
       case 'prompt-return': {
@@ -189,9 +224,10 @@ export function App({ store, callbacks }: { store: UiStore; callbacks: AppCallba
   })
 
   // Keep the status + input visible; the conversation shows its newest rows.
-  const visible = Math.max(0, rows - 3)
+  const picker = state.picker
+  const visible = Math.max(0, picker === undefined ? rows - 3 : rows - 4 - Math.min(picker.items.length, 12))
   const items = state.items.slice(-visible)
-  const suggestions = state.prompt === undefined ? callbacks.onSuggest(input, input.length) : []
+  const suggestions = state.prompt === undefined && picker === undefined ? callbacks.onSuggest(input, input.length) : []
   const promptLine = state.prompt === undefined
     ? `> ${input}`
     : state.prompt.kind === 'choice'
@@ -204,19 +240,34 @@ export function App({ store, callbacks }: { store: UiStore; callbacks: AppCallba
       <Box flexDirection="column" flexGrow={1}>
         {items.map(item => <Box key={item.key}>{renderRow(item)}</Box>)}
       </Box>
-      <Box flexDirection="column">
-        {suggestions.length > 0 && (
-          <Box flexDirection="column">
-            {suggestions.slice(0, 8).map((suggestion, index) => {
-              const highlighted = index === Math.min(selected, suggestions.length - 1)
-              return highlighted
-                ? <Text key={index} bold>{suggestion}</Text>
-                : <Text key={index} color="grey">{suggestion}</Text>
-            })}
-          </Box>
-        )}
-        <Text>{promptLine}</Text>
-      </Box>
+      {picker !== undefined && (
+        <Box flexDirection="column" borderStyle="round" borderColor="grey">
+          <Box><Text bold>Resume session — ↑/↓ select · Enter resume · f fork · Esc cancel</Text></Box>
+          {picker.items.map((item, index) => {
+            const when = new Date(item.createdAt).toLocaleString()
+            const where = item.cwd === undefined ? '' : `  ${item.cwd}`
+            const label = `${index + 1}. ${item.title ?? item.id}${item.live ? ' (live)' : ''}  ${when}${where}`
+            return index === picker.selected
+              ? <Box key={item.id}><Text bold>{`› ${label}`}</Text></Box>
+              : <Box key={item.id}><Text color="grey">{`  ${label}`}</Text></Box>
+          })}
+        </Box>
+      )}
+      {picker === undefined && (
+        <Box flexDirection="column">
+          {suggestions.length > 0 && (
+            <Box flexDirection="column">
+              {suggestions.slice(0, 8).map((suggestion, index) => {
+                const highlighted = index === Math.min(selected, suggestions.length - 1)
+                return highlighted
+                  ? <Text key={index} bold>{suggestion}</Text>
+                  : <Text key={index} color="grey">{suggestion}</Text>
+              })}
+            </Box>
+          )}
+          <Text>{promptLine}</Text>
+        </Box>
+      )}
     </Box>
   )
 }

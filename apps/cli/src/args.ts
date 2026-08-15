@@ -146,6 +146,9 @@ Examples:
   dsh                                         start the interactive terminal client
   dsh exec "run the tests"                    answer one task and exit (one-shot)
   dsh "run the tests"                         alias of: dsh exec "run the tests"
+  dsh resume                                  pick a persisted session to continue
+  dsh resume --last                           continue the most recent session
+  dsh resume <session-id>                     continue the named session
   dsh web                                     boot the web UI (same as: dsh --profile web)
   dsh --profile <name> ...                    boot any named profile
   dsh --profile web --help                    the web app's own flags and help
@@ -273,6 +276,23 @@ export function parseDshArgs(argv: readonly string[], version: string): DshInvoc
         program.error('error: exec needs a task, e.g. dsh exec "run the tests"')
       }
       resolved = resolveBoot(exec, 'tui', options, args)
+    })
+
+  const resume = program.command('resume').description('continue a persisted terminal session: pick from a list, resume the most recent (--last), or resume the given id')
+  resume
+    .argument('[session-id]', 'the session to resume; omitted opens the session picker')
+    .option('-l, --last', 'resume the most recent persisted session')
+    .action((sessionId: string | undefined, options: { last?: boolean }) => {
+      rejectParentOptions('resume')
+      if (options.last === true && sessionId !== undefined) {
+        program.error('error: resume takes either a session id or --last, not both')
+      }
+      const args = options.last === true
+        ? ['--continue']
+        : sessionId !== undefined
+          ? ['--resume', sessionId]
+          : ['--resume-picker']
+      resolved = { mode: 'profile', profile: 'tui', patches: [], args }
     })
 
   const plugin = program.command('plugin').description('manage a profile\'s plugins by forwarding the remaining arguments to pnpm in the profile directory')
