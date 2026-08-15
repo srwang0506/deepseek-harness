@@ -20,8 +20,9 @@ import z from '@deepseek-ai/schemastery'
 import { resolveDshHome } from '@deepseek-ai/dsh-home-paths'
 import type { Agent, ModelSelectionRef } from '@deepseek-ai/dsh-agent'
 import type {} from '@deepseek-ai/dsh-agent-default-model'
-import { createUserMessage } from '@deepseek-ai/dsh-llm'
+import { createUserMessage, ReasoningEffortId } from '@deepseek-ai/dsh-llm'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
+import type { ModelSelection } from '@deepseek-ai/dsh-agent'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import type { Session, SessionEvent, SessionHeader, TurnEndReason } from '@deepseek-ai/dsh-session'
 import type {} from '@deepseek-ai/dsh-session-query'
@@ -152,6 +153,31 @@ function resolveSelection(
 function fail(message: string, exit: (code: number) => void): void {
   internals.stderr.write(`dsh: ${message}\n`)
   exit(1)
+}
+
+/**
+ * Restore the model selection a persisted session last used: the route from
+ * its folded `request/context` events and the reasoning effort from its last
+ * request header. Returns undefined before any request happened.
+ * @param session - the adopted session whose log is the source of truth.
+ * @returns the restored selection, or undefined for a request-less session.
+ */
+export function restoreSessionSelection(session: Session): ModelSelection | undefined {
+  const context = session.requestContext()
+  if (context === undefined) return undefined
+  let effort: ReasoningEffortId | undefined
+  for (let index = session.events.length - 1; index >= 0; index--) {
+    const event = session.events[index]
+    if (event === undefined) continue
+    if (event.type !== 'request/header') continue
+    effort = event.data.header.config.reasoningEffort
+    break
+  }
+  return {
+    provider: context.provider,
+    model: context.model,
+    ...(effort === undefined ? {} : { reasoningEffort: effort }),
+  }
 }
 
 /** The JSONL stream protocol version, stamped on every emitted line. */
@@ -384,6 +410,7 @@ function helpText(): string {
     '  /new              start a fresh session',
     '  /resume [id]      open the session picker, or resume the given id',
     '  /model [model]    show the model, or switch it',
+    '  /reasoning [e]    show the reasoning effort, or set it (off/high/max; default clears)',
     '  /login [method]   log into OpenAI GPT (browser, device, api-key)',
     '  /logout           remove the OpenAI GPT credential',
     '  /sessions         list persisted sessions',
@@ -667,8 +694,8 @@ function togglePlanMode(ctx: Context, agent: Agent | undefined, store: UiStore):
 }
 
 /** The status-bar text: model, permission preset, and plan mode. */
-function statusText(selection: { provider: string; model: string }, ctx: Context, agent: Agent): string {
-  const parts = [`${selection.provider}/${selection.model}`]
+function statusText(selection: ModelSelection, ctx: Context, agent: Agent): string {
+  const parts = [`${selection.provider}/${selection.model}${selection.reasoningEffort === undefined ? '' : ` (${selection.reasoningEffort})`}`]
   const meter = ctx.get('tokenMeter')
   if (meter !== undefined) parts.push(`${meter.measure(agent.session).totalTokens} tokens`)
   const presets = ctx.get('permissionPresets')
@@ -714,7 +741,7 @@ function registerCustomCommands(ctx: Context): void {
 
 /** The built-in slash-command names plus every registry command. */
 function slashNames(ctx: Context, agent: Agent): string[] {
-  const names = new Set(['new', 'fork', 'delete', 'resume', 'model', 'login', 'logout', 'sessions', 'status', 'compact', 'init', 'doctor', 'export', 'diff', 'review', 'undo', 'help', 'quit', 'exit'])
+  const names = new Set(['new', 'fork', 'delete', 'resume', 'model', 'reasoning', 'login', 'logout', 'sessions', 'status', 'compact', 'init', 'doctor', 'export', 'diff', 'review', 'undo', 'help', 'quit', 'exit'])
   const commands = ctx.get('commands')
   if (commands !== undefined) {
     for (const descriptor of commands.list(agent)) names.add(descriptor.name)
@@ -808,7 +835,7 @@ async function runInteractive(ctx: Context, config: Config, exit: (code: number)
     return
   }
 
-  let selection = resolveSelection(defaultModel, config.model)
+  let selection: ModelSelection = resolveSelection(defaultModel, config.model)
   const selectionRef: ModelSelectionRef = { current: selection, assembled: undefined }
   let resumeSessionId = config.resumeSessionId
   if (resumeSessionId === '' && config.continue) {
@@ -840,6 +867,11 @@ async function runInteractive(ctx: Context, config: Config, exit: (code: number)
       onAdopt: (agent, resumed) => {
         if (resumed) {
           for (const event of agent.session.events) replayEventToStore(event, store)
+          const restored = restoreSessionSelection(agent.session)
+          if (restored !== undefined) {
+            selection = restored
+            selectionRef.current = restored
+          }
         }
       },
     },
@@ -926,6 +958,23 @@ async function runInteractive(ctx: Context, config: Config, exit: (code: number)
             selectionRef.current = selection
             store.push({ kind: 'info', text: `model set to ${selection.provider}/${selection.model} (next turn)` })
           }
+          refreshStatus()
+          return
+        }
+        case 'reasoning': {
+          const effort = slash.args.trim().toLowerCase()
+          if (effort === '') {
+            store.push({ kind: 'info', text: selection.reasoningEffort === undefined
+              ? 'reasoning: default (provider behavior)'
+              : `reasoning: ${selection.reasoningEffort}` })
+            return
+          }
+          const cleared = effort === 'off' || effort === 'none' || effort === 'default'
+          selection = cleared
+            ? { provider: selection.provider, model: selection.model }
+            : { provider: selection.provider, model: selection.model, reasoningEffort: ReasoningEffortId(effort) }
+          selectionRef.current = selection
+          store.push({ kind: 'info', text: cleared ? 'reasoning reset to default (next turn)' : `reasoning set to ${effort} (next turn)` })
           refreshStatus()
           return
         }

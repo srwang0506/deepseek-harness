@@ -557,6 +557,47 @@ describe.skipIf(process.platform === 'win32')('tui interactive REPL (real Loader
     }
   }, LOADER_SMOKE_TEST_TIMEOUT_MS * 2)
 
+  it('sets, reports, and clears the reasoning effort with /reasoning', async () => {
+    const apiKey = 'tui-reasoning-key'
+    const home = join(await mkdtemp(join(tmpdir(), 'dsh-tui-home-')), '.dsh')
+    const server = await startMockLlmServer({
+      sequence: ['success'],
+      repeatLast: true,
+      apiKey,
+      successText: 'mock interactive response',
+    })
+    try {
+      const output = await runTuiPty({
+        DSH_HOME: home,
+        DEEPSEEK_API_KEY: apiKey,
+        DEEPSEEK_BASE_URL: server.baseURL,
+        DSH_TELEMETRY_DISABLED: '1',
+        NO_COLOR: '1',
+      }, [
+        { op: 'wait', text: '>' },
+        { op: 'wait', text: 'deepseek-official' },
+        { op: 'send', text: '/reasoning high\n' },
+        { op: 'wait', text: 'reasoning set to high (next turn)' },
+        { op: 'send', text: 'hello\n' },
+        { op: 'wait', text: 'mock interactive response' },
+        { op: 'send', text: '/reasoning off\n' },
+        { op: 'wait', text: 'reasoning reset to default (next turn)' },
+        { op: 'send', text: 'hello again\n' },
+        { op: 'wait', text: 'mock interactive response', occurrences: 2 },
+        { op: 'send', text: '/quit\n' },
+        { op: 'expect-exit', code: 0 },
+      ])
+      expect(output).toContain('reasoning set to high (next turn)')
+      expect(output).toContain('reasoning reset to default (next turn)')
+      expect(output).toContain('mock interactive response')
+      // The set effort reached the wire: the first request carries it.
+      expect(JSON.stringify(server.requests[0]?.body)).toContain('"reasoning_effort":"high"')
+    } finally {
+      await server.close()
+      await rm(home, { recursive: true, force: true })
+    }
+  }, LOADER_SMOKE_TEST_TIMEOUT_MS * 2)
+
   it('Ctrl+C cancels only the running turn, then keeps the session usable', async () => {
     const apiKey = 'tui-cancel-key'
     const home = join(await mkdtemp(join(tmpdir(), 'dsh-tui-home-')), '.dsh')

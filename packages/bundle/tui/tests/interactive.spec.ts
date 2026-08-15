@@ -40,7 +40,10 @@ describe('replayEventToStore', () => {
   })
 })
 
-import { promptApproval, promptQuestions } from '../src/index.ts'
+import { promptApproval, promptQuestions, restoreSessionSelection } from '../src/index.ts'
+import { ReasoningEffortId } from '@deepseek-ai/dsh-llm'
+import { Context } from '@deepseek-ai/cordis'
+import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
 
 /**
  * Drive a prompt flow: answer every prompt it opens with the same value until
@@ -59,6 +62,43 @@ function answerPrompt<T>(pending: Promise<T>, store: UiStore, value: string | nu
   })()
   return pending
 }
+
+describe('restoreSessionSelection', () => {
+  it('restores the last route and reasoning effort from the session log', async () => {
+    const ctx = new Context()
+    await ctx.plugin(SessionStore)
+    const session = ctx.sessions.create(SessionId('session-restore'))
+    session.append('request/context', { provider: 'deepseek-official', model: 'deepseek-v4-flash', contextWindow: 100 })
+    session.append('request/header', {
+      header: { config: { provider: 'deepseek-official', model: 'deepseek-v4-flash', reasoningEffort: ReasoningEffortId('high') } },
+      reason: 'initial',
+    })
+    expect(restoreSessionSelection(session)).toEqual({
+      provider: 'deepseek-official',
+      model: 'deepseek-v4-flash',
+      reasoningEffort: ReasoningEffortId('high'),
+    })
+    await ctx.fiber.dispose()
+  })
+
+  it('restores the route without an effort when the last header has none', async () => {
+    const ctx = new Context()
+    await ctx.plugin(SessionStore)
+    const session = ctx.sessions.create(SessionId('session-restore-plain'))
+    session.append('request/context', { provider: 'p', model: 'm', contextWindow: 200 })
+    session.append('request/header', { header: { config: { provider: 'p', model: 'm' } }, reason: 'initial' })
+    expect(restoreSessionSelection(session)).toEqual({ provider: 'p', model: 'm' })
+    await ctx.fiber.dispose()
+  })
+
+  it('returns undefined before the first request', async () => {
+    const ctx = new Context()
+    await ctx.plugin(SessionStore)
+    const session = ctx.sessions.create(SessionId('session-fresh'))
+    expect(restoreSessionSelection(session)).toBeUndefined()
+    await ctx.fiber.dispose()
+  })
+})
 
 describe('promptApproval', () => {
   it('maps y to allowed-once, n to rejected, and a dismissal to cancelled', async () => {
