@@ -59,6 +59,16 @@ describe('insert-mode editing', () => {
   it('inserts multi-line paste text verbatim at the cursor', () => {
     expect(applyComposerKey(edit('a', 1), 'b\nc', key())).toEqual({ type: 'edit', next: edit('ab\nc', 4) })
   })
+
+  it('inserts a multi-line paste with a trailing newline without submitting', () => {
+    expect(applyComposerKey(edit(''), 'first\nsecond\n', key())).toEqual({ type: 'edit', next: edit('first\nsecond\n', 13) })
+  })
+
+  it('still submits a single-line chunk with a trailing Enter', () => {
+    expect(applyComposerKey(edit('ab'), 'c\r', key())).toEqual({
+      type: 'append-and-submit', line: 'abc', next: emptyEdit(),
+    })
+  })
 })
 
 describe('submission', () => {

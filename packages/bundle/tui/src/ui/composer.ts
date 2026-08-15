@@ -142,10 +142,15 @@ export function applyComposerKey(edit: ComposerEdit, keyInput: string, key: KeyL
   if (key.backspace) return edit.vim === 'normal' ? { type: 'none' } : { type: 'edit', next: backspace(edit) }
   if (key.delete) return edit.vim === 'normal' ? { type: 'none' } : { type: 'edit', next: deleteAt(edit) }
   if (!isPrintable(keyInput, key)) return { type: 'none' }
-  // An Enter that coalesced onto the tail of a typed chunk still ends the line.
+  // An Enter that coalesced onto the tail of a typed chunk still ends the
+  // line; a MULTI-line chunk is a paste and inserts verbatim, trailing
+  // newline included, without submitting.
   if (keyInput.endsWith('\r') || keyInput.endsWith('\n')) {
-    const appended = insert(edit, keyInput.slice(0, -1))
-    return { type: 'append-and-submit', line: appended.text, next: emptyEdit() }
+    const body = keyInput.slice(0, -1)
+    if (!body.includes('\r') && !body.includes('\n')) {
+      const appended = insert(edit, body)
+      return { type: 'append-and-submit', line: appended.text, next: emptyEdit() }
+    }
   }
   // A tab that coalesced onto the tail of a typed chunk (the PTY delivers
   // typed keys in one read) inserts the text, then still counts as Tab.

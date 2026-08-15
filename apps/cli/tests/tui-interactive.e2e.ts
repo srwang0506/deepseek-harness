@@ -530,6 +530,50 @@ describe.skipIf(process.platform === 'win32')('tui interactive REPL (real Loader
     }
   }, LOADER_SMOKE_TEST_TIMEOUT_MS)
 
+  it('pastes a multi-line prompt and submits it as one message', async () => {
+    const apiKey = 'tui-paste-key'
+    const home = join(await mkdtemp(join(tmpdir(), 'dsh-tui-home-')), '.dsh')
+    const server = await startMockLlmServer({
+      sequence: ['success'],
+      repeatLast: true,
+      apiKey,
+      successText: 'mock interactive response',
+    })
+    try {
+      await runTuiPty({
+        DSH_HOME: home,
+        DEEPSEEK_API_KEY: apiKey,
+        DEEPSEEK_BASE_URL: server.baseURL,
+        DSH_TELEMETRY_DISABLED: '1',
+        NO_COLOR: '1',
+      }, [
+        { op: 'wait', text: 'dsh' },
+        { op: 'wait', text: 'deepseek-official' },
+        // One raw chunk = one paste event: the composer inserts both lines.
+        { op: 'raw', text: 'first line\nsecond line' },
+        { op: 'sleep', seconds: 0.5 },
+        // A follow-up key repaints the frame (the first post-paste paint can
+        // be partial) and proves the composer stays editable after the paste.
+        { op: 'send', text: ' ' },
+        { op: 'wait', text: 'first line' },
+        { op: 'wait', text: 'second line' },
+        { op: 'send', text: '\n' },
+        { op: 'wait', text: 'mock interactive response' },
+        { op: 'send', text: '/quit\n' },
+        { op: 'expect-exit', code: 0 },
+      ])
+      // Both lines land in the SAME user message.
+      const body = JSON.stringify(server.requests.some((r) => {
+        const text = JSON.stringify(r.body)
+        return text.includes('first line') && text.includes('second line')
+      }))
+      expect(body).toBe('true')
+    } finally {
+      await server.close()
+      await rm(home, { recursive: true, force: true })
+    }
+  }, LOADER_SMOKE_TEST_TIMEOUT_MS)
+
   it('runs multiple turns, echoes Chinese input, and flushes sessions on Ctrl+D', async () => {
     const apiKey = 'tui-multiturn-key'
     const home = join(await mkdtemp(join(tmpdir(), 'dsh-tui-home-')), '.dsh')

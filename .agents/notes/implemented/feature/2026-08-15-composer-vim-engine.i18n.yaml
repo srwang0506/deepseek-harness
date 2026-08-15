@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-08-15-composer-vim-engine.md
-2026-08-15-composer-vim-engine.md: ee7794beea181753bbc53e3c83108e6e6e7e453f
-2026-08-15-composer-vim-engine.zh.md: 7dc2836821b503f48820f3a49ac1b2dcf0ac0b0c
+2026-08-15-composer-vim-engine.md: d52f280a4fecc4fecdd6b6d27f27b79c0bd3c0aa
+2026-08-15-composer-vim-engine.zh.md: 5cb226228a1856343342ff572383b1046d0c369e

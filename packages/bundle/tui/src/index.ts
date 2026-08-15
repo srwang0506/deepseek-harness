@@ -408,10 +408,12 @@ export async function pickerSessions(ctx: Context): Promise<Array<{
 }
 
 /**
- * Fork one session by id: live sessions fork directly; persisted sessions
- * load through the agents registry, fork, and dispose the loaded source.
- * @param ctx - plugin context carrying the sessions/agents registries.
+ * Fork one session by id through the session persistence backend: the child
+ * is persisted with `create` + `append` (never live), so the caller adopts it
+ * through `controller.replace` like any persisted session.
+ * @param ctx - plugin context carrying the sessions/agents registries and the persistence backend.
  * @param id - the session to fork.
+ * @param boundary - the inclusive seed seq; undefined forks the whole log.
  * @returns the child session id.
  */
 export async function forkSessionById(ctx: Context, id: string, boundary?: number): Promise<string> {
