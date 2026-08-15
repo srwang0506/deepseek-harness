@@ -473,6 +473,13 @@ describe.skipIf(process.platform === 'win32')('tui interactive REPL (real Loader
     }
   }, LOADER_SMOKE_TEST_TIMEOUT_MS)
 
+  // The Tab-queue path has no PTY scenario on purpose: the driver's typed
+  // keys coalesce into one read chunk with the tab embedded (Ink parses it
+  // as plain text), the mock's 8-char SSE chunks make any stream either too
+  // short or too slow to race against the echo-wait protocol, and the queue
+  // semantics (queue-while-running, drain, replace, dispose-clear, and the
+  // Tab-while-running App branch with its ⇥ queued status marker) are fully
+  // covered by controller.spec.ts and ui-render.spec.ts instead.
   it('runs multiple turns, echoes Chinese input, and flushes sessions on Ctrl+D', async () => {
     const apiKey = 'tui-multiturn-key'
     const home = join(await mkdtemp(join(tmpdir(), 'dsh-tui-home-')), '.dsh')

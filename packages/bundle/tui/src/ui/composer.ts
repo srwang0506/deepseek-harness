@@ -33,6 +33,7 @@ export type ComposerResult =
   | { type: 'edit'; next: ComposerEdit }
   | { type: 'submit'; line: string; next: ComposerEdit }
   | { type: 'append-and-submit'; line: string; next: ComposerEdit }
+  | { type: 'edit-and-complete'; next: ComposerEdit }
   | { type: 'history-search' }
   | { type: 'quit' }
   | { type: 'cancel' }
@@ -124,7 +125,9 @@ export function applyComposerKey(edit: ComposerEdit, keyInput: string, key: KeyL
   if (key.ctrl && keyInput === 'p') return { type: 'toggle-plan' }
   if (key.ctrl && keyInput === 'r') return { type: 'history-search' }
   if (key.ctrl && keyInput === 'u') return { type: 'edit', next: { text: '', cursor: 0, vim: 'insert' } }
-  if (key.tab) return key.shift ? { type: 'cycle-approval' } : { type: 'complete' }
+  // The PTY delivers a lone tab byte as input text with no tab flag, so
+  // both delivery forms count as Tab.
+  if (key.tab || keyInput === '\t') return key.shift ? { type: 'cycle-approval' } : { type: 'complete' }
   if (key.escape) return {
     type: 'edit',
     next: { ...edit, vim: edit.vim === 'normal' ? 'insert' : 'normal' },
@@ -143,6 +146,12 @@ export function applyComposerKey(edit: ComposerEdit, keyInput: string, key: KeyL
   if (keyInput.endsWith('\r') || keyInput.endsWith('\n')) {
     const appended = insert(edit, keyInput.slice(0, -1))
     return { type: 'append-and-submit', line: appended.text, next: emptyEdit() }
+  }
+  // A tab that coalesced onto the tail of a typed chunk (the PTY delivers
+  // typed keys in one read) inserts the text, then still counts as Tab.
+  const tabAt = keyInput.indexOf('\t')
+  if (tabAt !== -1) {
+    return { type: 'edit-and-complete', next: insert(edit, keyInput.slice(0, tabAt)) }
   }
   if (edit.vim === 'normal') return { type: 'edit', next: normalCommand(edit, keyInput) }
   return { type: 'edit', next: insert(edit, keyInput) }

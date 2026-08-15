@@ -122,7 +122,7 @@ async function harness(
       askApproval: async (_toolName, reason) => (reason === undefined ? 'allowed-once' : 'rejected'),
       askQuestions: async questions => ({ answers: questions.map(q => ({ id: q.id, selected: [] })) }),
       onRunningChange: (isRunning) => { running.push(isRunning) },
-      ...(callbacks.onAdopt === undefined ? {} : { onAdopt: callbacks.onAdopt }),
+      ...callbacks,
     },
   })
   return {
@@ -143,6 +143,59 @@ async function harness(
 }
 
 describe('TerminalSessionController', () => {
+  it('queues a message while running and drains it as the next followup turn', async () => {
+    const queueChanges: boolean[] = []
+    const test = await harness({ onQueueChange: (queued) => { queueChanges.push(queued) } })
+    await test.controller.start('')
+    const record = test.records[0]
+    record?.setStatus('running')
+    test.controller.queue(message('next turn'))
+    expect(queueChanges).toEqual([true])
+    expect(record?.followups).toHaveLength(0)
+    record?.settle()
+    await new Promise<void>((resolve) => { setImmediate(resolve) })
+    expect(record?.followups.map(m => textOf(m))).toEqual(['next turn'])
+    expect(queueChanges).toEqual([true, false])
+    await test.ctx.fiber.dispose()
+  })
+
+  it('replaces a previously queued message and submits immediately while idle', async () => {
+    const test = await harness()
+    await test.controller.start('')
+    const record = test.records[0]
+    record?.setStatus('running')
+    test.controller.queue(message('first queued'))
+    test.controller.queue(message('second queued'))
+    record?.settle()
+    await new Promise<void>((resolve) => { setImmediate(resolve) })
+    expect(record?.followups.map(m => textOf(m))).toEqual(['second queued'])
+    test.controller.queue(message('immediate'))
+    await new Promise<void>((resolve) => { setImmediate(resolve) })
+    expect(record?.followups.map(m => textOf(m))).toEqual(['second queued', 'immediate'])
+    await test.ctx.fiber.dispose()
+  })
+
+  it('clears the queue when the agent is disposed', async () => {
+    const queueChanges: boolean[] = []
+    const test = await harness({ onQueueChange: (queued) => { queueChanges.push(queued) } })
+    await test.controller.start('')
+    const record = test.records[0]
+    record?.setStatus('running')
+    test.controller.queue(message('queued then replaced'))
+    await test.controller.replace('')
+    await new Promise<void>((resolve) => { setImmediate(resolve) })
+    expect(queueChanges).toEqual([true, false])
+    await test.ctx.fiber.dispose()
+  })
+
+  it('drops a queue when no agent is adopted', async () => {
+    const queueChanges: boolean[] = []
+    const test = await harness({ onQueueChange: (queued) => { queueChanges.push(queued) } })
+    test.controller.queue(message('nowhere'))
+    expect(queueChanges).toEqual([])
+    await test.ctx.fiber.dispose()
+  })
+
   it('adopts a fresh agent and exposes it', async () => {
     const test = await harness()
     const agent = await test.controller.start('')

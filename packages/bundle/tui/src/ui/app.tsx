@@ -4,11 +4,12 @@
  * @module @deepseek-ai/dsh-tui/ui/app
  */
 
-import React, { useEffect, useRef, useState, useSyncExternalStore } from 'react'
+import React, { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { Box, Text, render, useInput } from 'ink'
 import type { UiStore, UiItem } from './store.ts'
 import { DiffView, MarkdownView } from './rich.tsx'
 import { keyIntent, pickerIntent } from './keys.ts'
+import type { KeyLike } from './keys.ts'
 import { applyComposerKey, emptyEdit } from './composer.ts'
 import type { ComposerEdit } from './composer.ts'
 import { historyRank, openFilesOverlay, openHistoryOverlay, overlayKey } from './overlay.ts'
@@ -17,6 +18,8 @@ import { historyRank, openFilesOverlay, openHistoryOverlay, overlayKey } from '.
 export interface AppCallbacks {
   /** Submit one command line. */
   onSubmit: (line: string) => void
+  /** Queue one line for the next turn (Tab while a turn runs). */
+  onQueue: (line: string) => void
   /** Quit and flush (Ctrl+D, /quit, /exit). */
   onQuit: () => void
   /** Cycle the permission preset (Shift+Tab). */
@@ -81,11 +84,13 @@ function renderRow(item: UiItem): React.ReactNode {
  */
 export function App({ store, callbacks }: { store: UiStore; callbacks: AppCallbacks }): React.JSX.Element {
   const state = useSyncExternalStore(store.subscribe, store.getSnapshot)
-  const rows = process.stdout.rows
+  // The testing library's fake stdout reports no size at all.
+  const rows = (process.stdout as { rows?: number }).rows
   const [edit, setEdit] = useState<ComposerEdit>(emptyEdit)
   const [promptText, setPromptText] = useState('')
   const [selected, setSelected] = useState(0)
   const editRef = useRef<ComposerEdit>(emptyEdit())
+  const keyHandlerRef = useRef<(keyInput: string, key: KeyLike) => void>(() => {})
   const promptTextRef = useRef('')
   const historyRef = useRef<string[]>([])
   const historyIndexRef = useRef(-1)
@@ -131,7 +136,14 @@ export function App({ store, callbacks }: { store: UiStore; callbacks: AppCallba
     }
   }
 
-  useInput((keyInput, key) => {
+  /**
+   * Route one parsed key through the open surface (picker, overlay, prompt,
+   * composer). Reassigned every render through `keyHandlerRef` so the
+   * `useInput` subscription below stays stable: Ink re-subscribes its stdin
+   * listener whenever the handler identity changes, and the spinner/stream
+   * re-renders would otherwise drop keystrokes in the resubscription gaps.
+   */
+  function handleKey(keyInput: string, key: KeyLike): void {
     if (state.picker !== undefined) {
       const picker = pickerIntent(keyInput, key)
       switch (picker.type) {
@@ -245,8 +257,22 @@ export function App({ store, callbacks }: { store: UiStore; callbacks: AppCallba
       case 'cancel':
         callbacks.onCancel()
         break
-      case 'complete': {
+      case 'complete':
+      case 'edit-and-complete': {
+        if (result.type === 'edit-and-complete') {
+          historyIndexRef.current = -1
+          editRef.current = result.next
+          setEdit(result.next)
+        }
         const current = editRef.current.text
+        if (state.running && current.trim() !== '') {
+          // Tab while a turn runs queues the line for the next turn (Codex),
+          // instead of steering and instead of path completion.
+          editRef.current = emptyEdit()
+          setEdit(emptyEdit())
+          callbacks.onQueue(current)
+          break
+        }
         let next: string | undefined
         if (suggestions.length > 0) {
           const chosen = suggestions[Math.min(selected, suggestions.length - 1)]
@@ -278,7 +304,12 @@ export function App({ store, callbacks }: { store: UiStore; callbacks: AppCallba
       case 'none':
         break
     }
-  })
+  }
+  keyHandlerRef.current = handleKey
+  const stableHandleInput = useCallback((keyInput: string, key: KeyLike): void => {
+    keyHandlerRef.current(keyInput, key)
+  }, [])
+  useInput(stableHandleInput)
 
   // Keep the composer + status visible; the conversation shows its newest rows.
   const picker = state.picker
@@ -289,8 +320,29 @@ export function App({ store, callbacks }: { store: UiStore; callbacks: AppCallba
   const pickerRows = picker === undefined ? 0 : 2 + Math.min(picker.items.length, 12)
   const overlayRows = overlay === undefined ? 0 : 2 + Math.min(overlay.matches.length, 8)
   const composerRows = state.prompt === undefined ? Math.max(1, edit.text.split('\n').length) : 1
-  const visible = Math.max(0, rows - composerRows - 1 - Math.min(suggestions.length, 8) - pickerRows - overlayRows)
-  const items = state.items.slice(-visible)
+  // The conversation slice is budgeted by rendered LINES, not items: one
+  // streamed assistant row can be dozens of lines tall, and an item-count
+  // slice would let it overflow the flex area and clip the composer and the
+  // status bar out of the fixed-height frame.
+  const budget = rows === undefined
+    ? Number.MAX_SAFE_INTEGER
+    : Math.max(1, rows - composerRows - 1 - Math.min(suggestions.length, 8) - pickerRows - overlayRows)
+  const items: UiItem[] = []
+  let lineBudget = budget
+  for (let index = state.items.length - 1; index >= 0 && lineBudget > 0; index -= 1) {
+    const item = state.items[index]
+    if (item === undefined) continue
+    const lines = item.text.split('\n')
+    if (lines.length > lineBudget) {
+      // A row taller than the whole budget (a long streamed response) shows
+      // its newest lines — the tail IS the live content.
+      items.unshift({ ...item, text: lines.slice(-lineBudget).join('\n') })
+      lineBudget = 0
+    } else {
+      items.unshift(item)
+      lineBudget -= lines.length
+    }
+  }
   const promptLine = state.prompt === undefined
     ? undefined
     : state.prompt.kind === 'choice'
@@ -350,7 +402,7 @@ export function App({ store, callbacks }: { store: UiStore; callbacks: AppCallba
             )
             : <Box><Text>{promptLine ?? ''}</Text></Box>}
           <Box>
-            <Text color="grey" dimColor>{`${spinner === '' ? '' : `${spinner} `}${status.left === '' ? 'dsh' : status.left}`}</Text>
+            <Text color="grey" dimColor>{`${state.queued ? '⇥ queued · ' : ''}${spinner === '' ? '' : `${spinner} `}${status.left === '' ? 'dsh' : status.left}`}</Text>
             <Box flexGrow={1} />
             <Text color="grey" dimColor>{status.right}</Text>
           </Box>

@@ -139,6 +139,10 @@ describe('surface intents', () => {
   it('maps Tab to completion and Shift+Tab to the approval cycle', () => {
     expect(applyComposerKey(edit('x'), '', key({ tab: true }))).toEqual({ type: 'complete' })
     expect(applyComposerKey(edit('x'), '', key({ tab: true, shift: true }))).toEqual({ type: 'cycle-approval' })
+    // The PTY delivers a lone tab byte as input text without the tab flag.
+    expect(applyComposerKey(edit('x'), '\t', key())).toEqual({ type: 'complete' })
+    // A tab coalesced onto a typed chunk inserts the text, then completes.
+    expect(applyComposerKey(edit('a'), 'bc\t', key())).toEqual({ type: 'edit-and-complete', next: edit('abc', 3) })
   })
 
   it('maps the arrow-up/down history intents and ignores other named keys', () => {

@@ -41,6 +41,14 @@ describe('UiStore', () => {
     expect(store.getSnapshot().status).toEqual({ left: 'sandbox read-only · 42 tokens', right: 'p/m' })
   })
 
+  it('setQueued publishes the queued flag', () => {
+    const store = new UiStore()
+    store.setQueued(true)
+    expect(store.getSnapshot().queued).toBe(true)
+    store.setQueued(false)
+    expect(store.getSnapshot().queued).toBe(false)
+  })
+
   it('setRunning publishes the running flag', () => {
     const store = new UiStore()
     store.setRunning(true)

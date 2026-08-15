@@ -459,6 +459,7 @@ function helpText(): string {
     'Keys: Esc toggles Vim normal mode (h/l, 0/$, w/b, x, D, i/a/I/A); Ctrl+U clears the line.',
     'Keys: Ctrl+R searches the submitted prompt history; Enter reuses the selected line.',
     'Keys: typing @ opens a fuzzy search over project files; Enter inserts the @path mention.',
+    'Keys: Tab while a turn runs queues the line for the next turn; Enter steers instead.',
     'A !-prefixed line runs a local shell command, e.g. !git status.',
     'A $name token invokes a skill, e.g. $demo-skill (skills load from $DSH_HOME/skills and .dsh/skills).',
     'Custom commands: $DSH_HOME/commands/<name>.md (prompt template with $ARGUMENTS).',
@@ -1008,6 +1009,7 @@ async function runInteractive(ctx: Context, config: Config, exit: (code: number)
       askApproval: (toolName, reason) => promptQueue.run(() => promptApproval(store, toolName, reason)),
       askQuestions: questions => promptQueue.run(() => promptQuestions(store, questions)),
       onRunningChange: (running) => { store.setRunning(running) },
+      onQueueChange: (queued) => { store.setQueued(queued) },
       onAdopt: (agent, resumed) => {
         if (resumed) {
           for (const event of agent.session.events) replayEventToStore(event, store)
@@ -1389,6 +1391,15 @@ async function runInteractive(ctx: Context, config: Config, exit: (code: number)
       // Let the current input/render pass settle before the finally block
       // unmounts the Ink surface underneath it.
       setImmediate(() => { quitResolve?.() })
+    },
+    onQueue: (line) => {
+      // The queued line is already part of the conversation: echo it now,
+      // and the turn runs it when the current one settles.
+      store.push({ kind: 'user', text: line })
+      controller.queue(createUserMessage({
+        content: [{ type: 'text', text: line }],
+        source: { kind: 'user' },
+      }))
     },
     onCycleApproval: () => { cyclePermissionPreset(ctx, controller.live(), store); refreshStatus() },
     onTogglePlan: () => { togglePlanMode(ctx, controller.live(), store); refreshStatus() },

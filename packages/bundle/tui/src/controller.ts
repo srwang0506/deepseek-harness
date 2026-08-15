@@ -29,6 +29,8 @@ export interface TerminalSessionCallbacks {
   askQuestions: (questions: readonly AskUserQuestionItem[]) => Promise<AskUserQuestionAnswer>
   /** Fired when the agent's observable running state changes. */
   onRunningChange?: (running: boolean) => void
+  /** Fired when the queued next-turn message is set or drained. */
+  onQueueChange?: (queued: boolean) => void
   /** Fired after adoption; `resumed` marks a persisted session whose transcript should replay. */
   onAdopt?: (agent: Agent, resumed: boolean) => void
 }
@@ -78,6 +80,7 @@ export class TerminalSessionController {
   private handle: AgentHandle | undefined
   private agent: Agent | undefined
   private running = false
+  private queued: UserMessage | undefined
   private listenersDetached = false
 
   /** @param options - plugin context, model selection, and surface callbacks. */
@@ -182,6 +185,31 @@ export class TerminalSessionController {
     this.agent?.inject(message)
   }
 
+  /**
+   * Queue one message as the next turn (Codex's Tab-while-running). While the
+   * agent runs, the message waits for the current turn to settle and then
+   * opens an ordinary follow-up turn; while idle it submits immediately. A
+   * new queue replaces any previously queued message.
+   * @param message - the prompt to run after the current turn.
+   */
+  queue(message: UserMessage): void {
+    const agent = this.agent
+    if (agent === undefined) return
+    if (agent.status !== 'running') {
+      void this.submit(message)
+      return
+    }
+    this.queued = message
+    this.callbacks.onQueueChange?.(true)
+    void agent.whenIdle().then(async () => {
+      const drained = this.queued
+      if (drained === undefined) return
+      this.queued = undefined
+      await this.submit(drained)
+      this.callbacks.onQueueChange?.(false)
+    })
+  }
+
   /** Cancel the live agent's current turn; the first Ctrl+C only cancels the run. */
   cancel(): void {
     this.agent?.cancel({ kind: 'user' })
@@ -231,6 +259,10 @@ export class TerminalSessionController {
     await this.handle?.dispose()
     this.handle = undefined
     this.agent = undefined
+    if (this.queued !== undefined) {
+      this.queued = undefined
+      this.callbacks.onQueueChange?.(false)
+    }
   }
 
   private detachListeners(): void {

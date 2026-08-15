@@ -125,6 +125,7 @@ Keys:
   Ctrl+U                           clear the composer line
   Ctrl+R                           search the submitted prompt history
   @                                fuzzy search project files (Enter inserts the mention)
+  Tab (while running)              queue the line for the next turn
 
 Custom commands: $DSH_HOME/commands/<name>.md (prompt template, $ARGUMENTS placeholder).
 `)

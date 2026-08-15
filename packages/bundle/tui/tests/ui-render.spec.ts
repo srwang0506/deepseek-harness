@@ -14,6 +14,7 @@ function callbacks(overrides: Partial<AppCallbacks> = {}): AppCallbacks {
   return {
     onSubmit: () => {},
     onQuit: () => {},
+    onQueue: () => {},
     onCycleApproval: () => {},
     onTogglePlan: () => {},
     onComplete: () => undefined,
@@ -73,6 +74,27 @@ describe('App', () => {
     const frame = lastFrame() ?? ''
     expect(frame).toContain('⏺ fix the bug')
     expect(frame).toContain('⏺ [bash] ls')
+  })
+
+  it('queues the line with Tab while a turn runs instead of completing', async () => {
+    const store = new UiStore()
+    const queued: string[] = []
+    store.setRunning(true)
+    const { stdin } = render(h(App, { store, callbacks: callbacks({ onQueue: (line) => { queued.push(line) } }) }))
+    await new Promise<void>((resolve) => { setImmediate(resolve) })
+    stdin.write('finish the refactor')
+    await new Promise<void>((resolve) => { setImmediate(resolve) })
+    stdin.write('\t')
+    await new Promise<void>((resolve) => { setImmediate(resolve) })
+    expect(queued).toEqual(['finish the refactor'])
+  })
+
+  it('shows the queued marker in the status bar', () => {
+    const store = new UiStore()
+    store.setQueued(true)
+    store.setStatus({ left: 'sandbox read-only', right: 'p/m' })
+    const { lastFrame } = render(h(App, { store, callbacks: callbacks() }))
+    expect(lastFrame() ?? '').toContain('⇥ queued')
   })
 
   it('shows the braille spinner in the status bar while running', () => {

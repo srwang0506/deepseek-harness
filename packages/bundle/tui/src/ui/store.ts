@@ -64,6 +64,8 @@ export interface UiState {
   items: readonly UiItem[]
   status: StatusInfo
   running: boolean
+  /** A next-turn message is queued and will run when the current turn settles. */
+  queued: boolean
   prompt: UiPrompt | undefined
   picker: UiPicker | undefined
   overlay: UiOverlay | undefined
@@ -77,7 +79,7 @@ type Listener = () => void
  * `useSyncExternalStore`.
  */
 export class UiStore {
-  private state: UiState = { items: [], status: { left: 'dsh', right: '' }, running: false, prompt: undefined, picker: undefined, overlay: undefined }
+  private state: UiState = { items: [], status: { left: 'dsh', right: '' }, running: false, queued: false, prompt: undefined, picker: undefined, overlay: undefined }
   private listeners = new Set<Listener>()
   private nextKey = 1
 
@@ -133,6 +135,14 @@ export class UiStore {
    */
   setRunning(running: boolean): void {
     this.publish({ ...this.state, running })
+  }
+
+  /**
+   * Mark whether a next-turn message is queued.
+   * @param queued - the new queued flag.
+   */
+  setQueued(queued: boolean): void {
+    this.publish({ ...this.state, queued })
   }
 
   /**
