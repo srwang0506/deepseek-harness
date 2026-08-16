@@ -12,11 +12,13 @@ The TUI approximated Codex's terminal style from memory: the invented `⏺` mark
 
 **Copy the source, not the recollection.** `messages.rs` renders the user message with `"› ".bold().dim()` (continuation `  `), assistant/reasoning/tool rows with `"• ".dim()`, and reasoning as dim italic `• ` bullets; `separators.rs` draws a dim `─` rule, labeled `─ Local tools: N calls ─` for turns that ran tools; `status_line_style.rs` color-codes the `/statusline` segments (model cyan, usage green, branch/mode magenta) joined by a dim ` · `; `session.rs` opens a session with a bordered header naming the model and onboarding hints. Each of those is now reproduced in `packages/bundle/tui`: `renderRow`/`render.ts` markers, `statusText` segments with an `accent` per segment, a `header` row kind rendered as a bordered box, and a per-store tool-call counter that labels the turn separator.
 
+**The terminal title matches Codex's OSC-0 write.** `terminal-title.ts` mirrors `terminal_title.rs`: one sanitized `\x1b]0;…\x07` write (control/invisible characters stripped, whitespace collapsed, 240-char bound) when stdout is a TTY, and an explicit clear on exit — the runner assembles `dsh | <session-title-or-model> | <branch>`, updating it on turn end once the session title exists.
+
 **The footer matches Codex's split.** The single footer line shows key hints (`? for shortcuts`, the braille spinner while running, `⇥ queued`) on the left and the color-coded status line (model, tokens, git branch from a new `gitBranch` helper, sandbox mode, permission preset, plan) on the right. A fresh session pushes a `header` + onboarding rows; a resumed session pushes the header before replaying the transcript.
 
 ## Consequences
 
-`git.ts` is unit-covered at 100%; the marker/separator/header changes are covered by `render.spec.ts` and `ui-render.spec.ts`, and the full 18-scenario PTY e2e passes with the new boot header and footer. READMEs describe the footer split, the session header/onboarding, and the labeled separators. User messages and the composer carry a subtle `#1e1e1e` background, Codex's `user_message_style` white-12%-on-dark approximation.
+`git.ts` and `terminal-title.ts` are unit-covered at 100%; the marker/separator/header changes are covered by `render.spec.ts` and `ui-render.spec.ts`, and the full 18-scenario PTY e2e passes with the new boot header and footer. READMEs describe the footer split, the session header/onboarding, and the labeled separators. User messages and the composer carry a subtle `#1e1e1e` background, Codex's `user_message_style` white-12%-on-dark approximation.
 
 ## Alternatives considered
 

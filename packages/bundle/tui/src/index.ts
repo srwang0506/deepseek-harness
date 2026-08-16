@@ -56,6 +56,7 @@ import { completeMention, extractMentions, readMention, suggestMentions } from '
 import { loadCustomCommands } from './custom-commands.ts'
 import { buildFileIndex } from './file-index.ts'
 import { gitBranch } from './git.ts'
+import { clearTerminalTitle, setTerminalTitle } from './terminal-title.ts'
 import { fuzzyFilter } from './ui/fuzzy.ts'
 import { UiStore } from './ui/store.ts'
 import type { EditMessageItem, StatusInfo, StatusSegment } from './ui/store.ts'
@@ -1079,6 +1080,7 @@ async function runInteractive(ctx: Context, config: Config, exit: (code: number)
       onEvent: (session, event) => {
         if (session === controller.live()?.session) streamEventToStore(event, store)
         else streamSubagentEventToStore(event, store, `[subagent ${session.id.slice(-8)}]`)
+        if (event.type === 'turn/end') refreshTitle()
       },
       askApproval: (toolName, reason) => promptQueue.run(() => promptApproval(store, toolName, reason)),
       askQuestions: questions => promptQueue.run(() => promptQuestions(store, questions)),
@@ -1098,6 +1100,7 @@ async function runInteractive(ctx: Context, config: Config, exit: (code: number)
         } else {
           for (const hint of ONBOARDING) store.push({ kind: 'info', text: hint })
         }
+        refreshTitle()
       },
     },
   })
@@ -1107,6 +1110,23 @@ async function runInteractive(ctx: Context, config: Config, exit: (code: number)
   const refreshStatus = (): void => {
     const agent = controller.live()
     if (agent !== undefined) store.setStatus(statusText(selection, ctx, agent, config.model !== ''))
+  }
+
+  // The terminal window/tab title, Codex-style: `dsh | <title|model> | <branch>`.
+  const refreshTitle = (): void => {
+    const agent = controller.live()
+    if (agent === undefined) return
+    const branch = gitBranch(process.cwd())
+    const fallback = `${selection.provider}/${selection.model}`
+    const query = ctx.get('sessionQuery')
+    if (query === undefined) {
+      setTerminalTitle(`dsh | ${fallback}${branch === undefined ? '' : ` | ${branch}`}`)
+      return
+    }
+    void query.readTitle(agent.id).then((snapshot) => {
+      const label = snapshot === undefined || snapshot.title === '' ? fallback : snapshot.title
+      setTerminalTitle(`dsh | ${label}${branch === undefined ? '' : ` | ${branch}`}`)
+    }).catch(() => {})
   }
 
   let quitResolve: (() => void) | undefined
@@ -1586,6 +1606,7 @@ async function runInteractive(ctx: Context, config: Config, exit: (code: number)
     await quitPromise
   } finally {
     instance.unmount()
+    clearTerminalTitle()
     internals.stdin.setRawMode?.(false)
     await controller.shutdown()
   }

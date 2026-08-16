@@ -12,11 +12,13 @@ TUI 凭记忆近似了 Codex 的终端风格：臆造的 `⏺` 标记、既不�
 
 **照抄源码，而非回忆。** `messages.rs` 用 `"› ".bold().dim()`（续行 `  `）渲染用户消息，用 `"• ".dim()` 渲染 assistant/reasoning/工具行，reasoning 为 dim italic 的 `• ` 项目符号；`separators.rs` 画 dim `─` 横线，工具轮次标注 `─ Local tools: N calls ─`；`status_line_style.rs` 给 `/statusline` 分段着色（模型青、用量绿、分支/模式品红），以 dim ` · ` 连接；`session.rs` 以命名模型的带边框头与 onboarding 提示开启会话。以上均已在 `packages/bundle/tui` 复刻：`renderRow`/`render.ts` 的标记、`statusText` 每段带 `accent` 的分段、以带边框盒渲染的 `header` 行类型、以及标注轮次分隔的 per-store 工具调用计数。
 
+**终端标题对齐 Codex 的 OSC-0 写路径。** `terminal-title.ts` 镜像 `terminal_title.rs`：stdout 为终端时写一条经净化的 `\x1b]0;…\x07`（剥离控制/不可见字符、折叠空白、240 字符上限），退出时显式清除——runner 组装 `dsh | <会话标题或模型> | <分支>`，并在会话标题生成后的轮次结束更新。
+
 **footer 对齐 Codex 的分栏。** 单行 footer 左侧显示按键提示（`? for shortcuts`、运行中的 braille spinner、`⇥ queued`），右侧显示分段着色状态行（模型、token、新 `gitBranch` 助手读出的 git 分支、sandbox 模式、权限预设、plan）。新会话推入 `header` + onboarding 行；续跑会话在重放转录前推入 header。
 
 ## 后果
 
-`git.ts` 单元覆盖率 100%；标记/分隔/头部的改动由 `render.spec.ts` 与 `ui-render.spec.ts` 覆盖，带新启动头与 footer 的 18 个 PTY e2e 全部通过。README 描述 footer 分栏、会话头/onboarding 与带标签分隔。用户消息与 composer 携带 `#1e1e1e` 微妙底色，即 Codex `user_message_style` 深色终端白 12% 透明度的近似。
+`git.ts` 与 `terminal-title.ts` 单元覆盖率 100%；标记/分隔/头部的改动由 `render.spec.ts` 与 `ui-render.spec.ts` 覆盖，带新启动头与 footer 的 18 个 PTY e2e 全部通过。README 描述 footer 分栏、会话头/onboarding 与带标签分隔。用户消息与 composer 携带 `#1e1e1e` 微妙底色，即 Codex `user_message_style` 深色终端白 12% 透明度的近似。
 
 ## 备选方案
 
