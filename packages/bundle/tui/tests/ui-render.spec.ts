@@ -68,6 +68,43 @@ describe('App', () => {
     expect(frame.indexOf('sandbox read-only')).toBeGreaterThan(frame.indexOf('hello'))
   })
 
+  it('renders the Codex-style session header card', () => {
+    const store = new UiStore()
+    store.push({
+      kind: 'header',
+      text: '',
+      header: { appName: 'dsh', version: '0.1.0-rc.10', model: 'deepseek-official/deepseek-chat', reasoningEffort: 'high', directory: '~/src', yoloMode: false },
+    })
+    const { lastFrame } = render(h(App, { store, callbacks: callbacks() }))
+    const frame = lastFrame() ?? ''
+    expect(frame).toContain('>_ dsh (v0.1.0-rc.10)')
+    expect(frame).toContain('model:')
+    expect(frame).toContain('deepseek-official/deepseek-chat high')
+    expect(frame).toContain('directory:')
+    expect(frame).toContain('~/src')
+  })
+
+  it('shows the YOLO permissions line in the header when unrestricted', () => {
+    const store = new UiStore()
+    store.push({
+      kind: 'header',
+      text: '',
+      header: { appName: 'dsh', version: '', model: 'p/m', directory: '/tmp', yoloMode: true },
+    })
+    const { lastFrame } = render(h(App, { store, callbacks: callbacks() }))
+    const frame = lastFrame() ?? ''
+    expect(frame).toContain('>_ dsh')
+    expect(frame).toContain('permissions:')
+    expect(frame).toContain('YOLO mode')
+  })
+
+  it('falls back to plain text for a header row without facts', () => {
+    const store = new UiStore()
+    store.push({ kind: 'header', text: 'legacy header' })
+    const { lastFrame } = render(h(App, { store, callbacks: callbacks() }))
+    expect(lastFrame() ?? '').toContain('legacy header')
+  })
+
   it('renders user and tool rows with the Codex marker', () => {
     const store = new UiStore()
     store.push({ kind: 'user', text: 'fix the bug' })

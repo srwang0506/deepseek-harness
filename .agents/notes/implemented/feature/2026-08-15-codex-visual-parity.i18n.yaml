@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-08-15-codex-visual-parity.md
-2026-08-15-codex-visual-parity.md: 992ac6892f9dd13255861601e5467779aed9081a
-2026-08-15-codex-visual-parity.zh.md: bfd8593c23833324f2898ff2056ef303d9b0f473
+2026-08-15-codex-visual-parity.md: 8e280d298e67752db0c5ad82d94668e5b446dd51
+2026-08-15-codex-visual-parity.zh.md: 2fd8a5953ebcbc6094de7de711933444b43bf196

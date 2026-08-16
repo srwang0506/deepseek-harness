@@ -8,6 +8,7 @@ import React, { useCallback, useEffect, useRef, useState, useSyncExternalStore }
 import { Box, Text, render, useInput } from 'ink'
 import type { UiStore, UiItem } from './store.ts'
 import { DiffView, MarkdownView } from './rich.tsx'
+import { centerTruncate } from '../header.ts'
 import { keyIntent, pickerIntent } from './keys.ts'
 import type { KeyLike } from './keys.ts'
 import { applyComposerKey, emptyEdit } from './composer.ts'
@@ -49,6 +50,9 @@ export interface AppCallbacks {
 
 /** Braille spinner frames for the running-turn indicator. */
 const SPINNER_FRAMES = ['⠋', '⠙', '⠸', '⠴', '⠦', '⠇']
+
+/** Codex's header-card inner-width ceiling, in columns. */
+const SESSION_HEADER_MAX_INNER_WIDTH = 56
 
 /** Color each row by its presentation kind. */
 function colorOf(kind: UiItem['kind']): string | undefined {
@@ -103,9 +107,39 @@ function renderRow(item: UiItem): React.ReactNode {
     return <Text color="grey" dimColor>{`─${label}${'─'.repeat(Math.max(0, 72 - label.length - 1))}`}</Text>
   }
   if (item.kind === 'header') {
+    const header = item.header
+    if (header === undefined) return <Text color="cyan">{item.text}</Text>
+    // Codex's title card: a dim `>_ <app> (vX)` title, a blank line, then
+    // dim label / value rows for model, directory, and (in YOLO mode)
+    // permissions. Labels align to the widest label present.
+    const labelWidth = header.yoloMode ? 'permissions:'.length : 'directory:'.length
+    const label = (text: string): string => `${text.padEnd(labelWidth)} `
+    const title = `${header.appName}${header.version === '' ? '' : ` (v${header.version})`}`
+    const modelTail = header.reasoningEffort === undefined ? '' : ` ${header.reasoningEffort}`
+    // Codex clamps the card to a 56-column inner width and center-truncates
+    // the directory so its basename stays visible on long paths.
+    const directory = centerTruncate(header.directory, SESSION_HEADER_MAX_INNER_WIDTH - label('directory:').length)
     return (
-      <Box borderStyle="round" borderColor="grey">
-        <Text color="cyan">{item.text}</Text>
+      <Box flexDirection="column" borderStyle="round" borderColor="grey" borderDimColor paddingX={1}>
+        <Text>
+          <Text color="grey" dimColor>{'>_ '}</Text>
+          <Text bold>{title}</Text>
+        </Text>
+        <Text> </Text>
+        <Text>
+          <Text color="grey" dimColor>{label('model:')}</Text>
+          <Text>{header.model}{modelTail}</Text>
+        </Text>
+        <Text>
+          <Text color="grey" dimColor>{label('directory:')}</Text>
+          <Text>{directory}</Text>
+        </Text>
+        {header.yoloMode ? (
+          <Text>
+            <Text color="grey" dimColor>{label('permissions:')}</Text>
+            <Text color="magenta" bold>YOLO mode</Text>
+          </Text>
+        ) : null}
       </Box>
     )
   }

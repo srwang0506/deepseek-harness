@@ -24,7 +24,10 @@ function readVersion(): string {
   return typeof manifest.version === 'string' ? manifest.version : '0.0.0'
 }
 
-const invocation = parseDshArgs(process.argv.slice(2), readVersion())
+const version = readVersion()
+// The terminal header reads this to print the same version as `dsh --version`.
+process.env.DSH_VERSION = version
+const invocation = parseDshArgs(process.argv.slice(2), version)
 
 switch (invocation.mode) {
   case 'profile': {

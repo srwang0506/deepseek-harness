@@ -56,6 +56,7 @@ import { completeMention, extractMentions, readMention, suggestMentions } from '
 import { loadCustomCommands } from './custom-commands.ts'
 import { buildFileIndex } from './file-index.ts'
 import { gitBranch } from './git.ts'
+import { appVersion, relativizeHome } from './header.ts'
 import { clearTerminalTitle, setTerminalTitle } from './terminal-title.ts'
 import { fuzzyFilter } from './ui/fuzzy.ts'
 import { UiStore } from './ui/store.ts'
@@ -469,10 +470,13 @@ async function persistForkChild(ctx: Context, source: Session, boundary: number 
 
 /** Onboarding hints shown on a fresh session, mirroring Codex's help block. */
 const ONBOARDING = [
-  '/status        show current session configuration',
-  '/permissions   choose what Codex is allowed to do',
-  '/model         choose what model and reasoning effort to use',
-  '/review        review any changes and find issues',
+  '  To get started, describe a task or try one of these commands:',
+  '',
+  '  /init - create an AGENTS.md file with instructions for the agent',
+  '  /status - show current session configuration',
+  '  /permissions - choose what the agent is allowed to do',
+  '  /model - choose what model and reasoning effort to use',
+  '  /review - review any changes and find issues',
 ]
 
 /** Default AGENTS.md written by /init when none exists. */
@@ -815,8 +819,6 @@ function statusText(selection: ModelSelection, ctx: Context, agent: Agent, launc
   if (branch !== undefined) segments.push({ text: branch, accent: 'mode' })
   const sandbox = ctx.get('sandboxPolicy')?.resolve({ session: agent.session }).mode
   if (sandbox !== undefined) segments.push({ text: `sandbox ${sandbox}`, accent: 'mode' })
-  const presets = ctx.get('permissionPresets')
-  if (presets !== undefined) segments.push({ text: presets.current(agent.session.events), accent: 'mode' })
   const planMode = ctx.get('planMode')
   if (planMode !== undefined && planMode.get(agent).active) segments.push({ text: 'plan', accent: 'mode' })
   return { segments }
@@ -1094,7 +1096,18 @@ async function runInteractive(ctx: Context, config: Config, exit: (code: number)
             selectionRef.current = restored
           }
         }
-        store.push({ kind: 'header', text: `${selection.provider}/${selection.model}` })
+        store.push({
+          kind: 'header',
+          text: '',
+          header: {
+            appName: 'dsh',
+            version: appVersion(),
+            model: `${selection.provider}/${selection.model}`,
+            ...(selection.reasoningEffort === undefined ? {} : { reasoningEffort: selection.reasoningEffort }),
+            directory: relativizeHome(process.cwd()),
+            yoloMode: ctx.get('sandboxPolicy')?.resolve({ session: agent.session }).mode === 'danger-full-access',
+          },
+        })
         if (resumed) {
           for (const event of agent.session.events) replayEventToStore(event, store)
         } else {

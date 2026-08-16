@@ -6,6 +6,22 @@
 
 import type { PromptMode } from './keys.ts'
 
+/** Codex-style session header facts, rendered as a bordered title card. */
+export interface SessionHeader {
+  /** App name shown in the title line, e.g. "dsh". */
+  appName: string
+  /** App version shown in the title line. */
+  version: string
+  /** The active model (provider/model). */
+  model: string
+  /** Optional reasoning-effort suffix shown beside the model. */
+  reasoningEffort?: string
+  /** The session working directory. */
+  directory: string
+  /** Whether the session runs in unrestricted YOLO mode (`danger-full-access`). */
+  yoloMode: boolean
+}
+
 /** One rendered conversation row. */
 export interface UiItem {
   /** Monotonic per-store key. */
@@ -14,6 +30,8 @@ export interface UiItem {
   kind: 'user' | 'assistant' | 'reasoning' | 'tool' | 'diff' | 'error' | 'info' | 'separator' | 'header'
   /** Plain text content. */
   text: string
+  /** Header facts; present only when `kind === 'header'`. */
+  header?: SessionHeader
 }
 
 /** One selectable session in the resume picker. */
