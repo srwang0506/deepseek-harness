@@ -1449,8 +1449,12 @@ async function runInteractive(ctx: Context, config: Config, exit: (code: number)
       }))
     }
     const blocks = await imageBlocks(ctx, pendingImages)
+    const attachedImages = pendingImages
     pendingImages = []
     store.push({ kind: 'user', text: line })
+    for (const path of attachedImages) {
+      store.push({ kind: 'info', text: `  [image: ${basename(path)}]` })
+    }
     // While a turn runs, a submitted line steers the agent at its next step
     // instead of queueing a second turn.
     await controller.submit(createUserMessage({

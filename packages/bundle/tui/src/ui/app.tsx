@@ -111,7 +111,7 @@ function renderRow(item: UiItem): React.ReactNode {
   }
   if (item.kind === 'diff') return <DiffView text={item.text} />
   if (item.kind === 'tool') return <Text color="grey" dimColor>{`• ${item.text}`}</Text>
-  if (item.kind === 'user') return <Text bold dimColor backgroundColor="#1e1e1e">{`› ${item.text}`}</Text>
+  if (item.kind === 'user') return <Text bold dimColor>{`› ${item.text}`}</Text>
   return colored(item.text, colorOf(item.kind))
 }
 
@@ -472,7 +472,7 @@ export function App({ store, callbacks }: { store: UiStore; callbacks: AppCallba
           )}
           {state.prompt === undefined
             ? (
-              <Box><Text backgroundColor="#1e1e1e">
+              <Box><Text>
                 {cursorBefore}
                 <Text inverse>{cursorChar}</Text>
                 {cursorAfter}
