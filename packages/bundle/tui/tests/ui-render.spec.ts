@@ -57,7 +57,7 @@ describe('DiffView', () => {
 describe('App', () => {
   it('renders the composer, conversation, and the two-sided status bar beneath it', () => {
     const store = new UiStore()
-    store.setStatus({ left: [{ text: 'sandbox read-only', accent: 'mode' }], right: [{ text: 'deepseek-official/deepseek-v4-flash', accent: 'model' }] })
+    store.setStatus({ segments: [{ text: 'deepseek-official/deepseek-v4-flash', accent: 'model' }, { text: 'sandbox read-only', accent: 'mode' }] })
     store.push({ kind: 'assistant', text: 'hello' })
     const { lastFrame } = render(h(App, { store, callbacks: callbacks() }))
     const frame = lastFrame() ?? ''
@@ -94,7 +94,7 @@ describe('App', () => {
   it('shows the queued marker in the status bar', () => {
     const store = new UiStore()
     store.setQueued(true)
-    store.setStatus({ left: [{ text: 'sandbox read-only', accent: 'mode' }], right: [{ text: 'p/m', accent: 'model' }] })
+    store.setStatus({ segments: [{ text: 'p/m', accent: 'model' }, { text: 'sandbox read-only', accent: 'mode' }] })
     const { lastFrame } = render(h(App, { store, callbacks: callbacks() }))
     expect(lastFrame() ?? '').toContain('⇥ queued')
   })
@@ -102,7 +102,7 @@ describe('App', () => {
   it('shows the braille spinner in the status bar while running', () => {
     const store = new UiStore()
     store.setRunning(true)
-    store.setStatus({ left: [{ text: 'sandbox read-only', accent: 'mode' }], right: [{ text: 'p/m', accent: 'model' }] })
+    store.setStatus({ segments: [{ text: 'p/m', accent: 'model' }, { text: 'sandbox read-only', accent: 'mode' }] })
     const { lastFrame } = render(h(App, { store, callbacks: callbacks() }))
     const frame = lastFrame() ?? ''
     expect(frame).toMatch(/[⠋⠙⠸⠴⠦⠇]/)

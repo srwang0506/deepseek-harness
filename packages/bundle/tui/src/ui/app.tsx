@@ -98,10 +98,20 @@ function selectSuggestion(line: string, chosen: string): string {
 function renderRow(item: UiItem): React.ReactNode {
   if (item.kind === 'assistant') return <Box><Text color="grey" dimColor>• </Text><MarkdownView text={item.text} /></Box>
   if (item.kind === 'reasoning') return <Text color="grey" dimColor>{`• ${item.text}`}</Text>
-  if (item.kind === 'separator') return <Text color="grey" dimColor>{'─'.repeat(72)}</Text>
+  if (item.kind === 'separator') {
+    const label = item.text === '' ? '' : ` ${item.text} `
+    return <Text color="grey" dimColor>{`─${label}${'─'.repeat(Math.max(0, 72 - label.length - 1))}`}</Text>
+  }
+  if (item.kind === 'header') {
+    return (
+      <Box borderStyle="round" borderColor="grey">
+        <Text color="cyan">{item.text}</Text>
+      </Box>
+    )
+  }
   if (item.kind === 'diff') return <DiffView text={item.text} />
   if (item.kind === 'tool') return <Text color="grey" dimColor>{`• ${item.text}`}</Text>
-  if (item.kind === 'user') return <Text bold dimColor>{`› ${item.text}`}</Text>
+  if (item.kind === 'user') return <Text bold dimColor backgroundColor="#1e1e1e">{`› ${item.text}`}</Text>
   return colored(item.text, colorOf(item.kind))
 }
 
@@ -462,7 +472,7 @@ export function App({ store, callbacks }: { store: UiStore; callbacks: AppCallba
           )}
           {state.prompt === undefined
             ? (
-              <Box><Text>
+              <Box><Text backgroundColor="#1e1e1e">
                 {cursorBefore}
                 <Text inverse>{cursorChar}</Text>
                 {cursorAfter}
@@ -474,10 +484,10 @@ export function App({ store, callbacks }: { store: UiStore; callbacks: AppCallba
               {state.queued ? <Text color="magenta">{'⇥ queued'}</Text> : null}
               {state.queued ? <Text color="grey" dimColor> · </Text> : null}
               {spinner === '' ? null : <Text color="grey" dimColor>{`${spinner} `}</Text>}
-              {statusSpans(status.left)}
+              {!state.running && !state.queued ? <Text color="grey" dimColor>{'? for shortcuts'}</Text> : null}
             </Box>
             <Box flexGrow={1} />
-            <Box>{statusSpans(status.right)}</Box>
+            <Box>{statusSpans(status.segments)}</Box>
           </Box>
         </Box>
       )}

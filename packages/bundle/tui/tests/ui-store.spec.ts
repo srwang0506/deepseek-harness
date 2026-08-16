@@ -38,12 +38,18 @@ describe('UiStore', () => {
   it('setStatus publishes the status bar halves', () => {
     const store = new UiStore()
     store.setStatus({
-      left: [{ text: 'sandbox read-only', accent: 'mode' }, { text: '42 tokens', accent: 'usage' }],
-      right: [{ text: 'p/m', accent: 'model' }],
+      segments: [
+        { text: 'p/m', accent: 'model' },
+        { text: '42 tokens', accent: 'usage' },
+        { text: 'sandbox read-only', accent: 'mode' },
+      ],
     })
     expect(store.getSnapshot().status).toEqual({
-      left: [{ text: 'sandbox read-only', accent: 'mode' }, { text: '42 tokens', accent: 'usage' }],
-      right: [{ text: 'p/m', accent: 'model' }],
+      segments: [
+        { text: 'p/m', accent: 'model' },
+        { text: '42 tokens', accent: 'usage' },
+        { text: 'sandbox read-only', accent: 'mode' },
+      ],
     })
   })
 

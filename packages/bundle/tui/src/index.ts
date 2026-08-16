@@ -55,6 +55,7 @@ import { extractText, toolCallTitle } from './present.ts'
 import { completeMention, extractMentions, readMention, suggestMentions } from './mention.ts'
 import { loadCustomCommands } from './custom-commands.ts'
 import { buildFileIndex } from './file-index.ts'
+import { gitBranch } from './git.ts'
 import { fuzzyFilter } from './ui/fuzzy.ts'
 import { UiStore } from './ui/store.ts'
 import type { EditMessageItem, StatusInfo, StatusSegment } from './ui/store.ts'
@@ -465,6 +466,14 @@ async function persistForkChild(ctx: Context, source: Session, boundary: number 
   return childId
 }
 
+/** Onboarding hints shown on a fresh session, mirroring Codex's help block. */
+const ONBOARDING = [
+  '/status        show current session configuration',
+  '/permissions   choose what Codex is allowed to do',
+  '/model         choose what model and reasoning effort to use',
+  '/review        review any changes and find issues',
+]
+
 /** Default AGENTS.md written by /init when none exists. */
 const AGENTS_TEMPLATE = '# AGENTS.md\n\nInstructions for AI coding agents working in this repository.\n\nAdd project-specific conventions, commands, and guidelines here.\n'
 
@@ -522,6 +531,23 @@ function turnEndText(reason: TurnEndReason): string | undefined {
   }
 }
 
+/** Per-store tool-call count since the last turn boundary (separator labels). */
+const turnToolCounts = new WeakMap<UiStore, number>()
+
+/**
+ * The separator label for one turn: `Local tools: N calls` for tool turns,
+ * empty (a plain rule) otherwise.
+ */
+function turnSeparatorLabel(store: UiStore, kind: 'tool' | 'end'): string {
+  if (kind === 'tool') {
+    turnToolCounts.set(store, (turnToolCounts.get(store) ?? 0) + 1)
+    return ''
+  }
+  const count = turnToolCounts.get(store) ?? 0
+  turnToolCounts.delete(store)
+  return count === 0 ? '' : `Local tools: ${count} ${count === 1 ? 'call' : 'calls'}`
+}
+
 /**
  * Render one committed session event into the UI store.
  * @param event - the committed event.
@@ -535,11 +561,13 @@ export function streamEventToStore(event: SessionEvent, store: UiStore): void {
       else if (chunk.type === 'reasoning-delta') store.appendText('reasoning', chunk.text)
       return
     }
-    case 'tool/call':
+    case 'tool/call': {
       // A Codex-style tool card: the tool name labels the action line, and
       // the following tool/result row is the card body.
       store.push({ kind: 'tool', text: `[${event.data.name}] ${toolCallTitle(event.data.name, event.data.arguments)}` })
+      turnSeparatorLabel(store, 'tool')
       return
+    }
     case 'tool/result': {
       const diffs = diffsFromMeta(event.data.meta)
       if (diffs !== undefined) {
@@ -554,7 +582,7 @@ export function streamEventToStore(event: SessionEvent, store: UiStore): void {
     case 'turn/end': {
       const text = turnEndText(event.data.reason)
       if (text !== undefined) store.push({ kind: 'error', text })
-      store.push({ kind: 'separator', text: '' })
+      store.push({ kind: 'separator', text: turnSeparatorLabel(store, 'end') })
       return
     }
     default:
@@ -775,21 +803,22 @@ function togglePlanMode(ctx: Context, agent: Agent | undefined, store: UiStore):
  * separators (model cyan, usage green, mode magenta, metadata cyan).
  */
 function statusText(selection: ModelSelection, ctx: Context, agent: Agent, launchOverride: boolean): StatusInfo {
-  const right: StatusSegment[] = [{
+  const segments: StatusSegment[] = [{
     text: `${selection.provider}/${selection.model}${selection.reasoningEffort === undefined ? '' : ` (${selection.reasoningEffort})`}`,
     accent: 'model',
   }]
-  if (launchOverride) right.push({ text: '-m', accent: 'metadata' })
-  const left: StatusSegment[] = []
-  const sandbox = ctx.get('sandboxPolicy')?.resolve({ session: agent.session }).mode
-  if (sandbox !== undefined) left.push({ text: `sandbox ${sandbox}`, accent: 'mode' })
+  if (launchOverride) segments.push({ text: '-m', accent: 'metadata' })
   const meter = ctx.get('tokenMeter')
-  if (meter !== undefined) left.push({ text: `${meter.measure(agent.session).totalTokens} tokens`, accent: 'usage' })
+  if (meter !== undefined) segments.push({ text: `${meter.measure(agent.session).totalTokens} tokens`, accent: 'usage' })
+  const branch = gitBranch(process.cwd())
+  if (branch !== undefined) segments.push({ text: branch, accent: 'mode' })
+  const sandbox = ctx.get('sandboxPolicy')?.resolve({ session: agent.session }).mode
+  if (sandbox !== undefined) segments.push({ text: `sandbox ${sandbox}`, accent: 'mode' })
   const presets = ctx.get('permissionPresets')
-  if (presets !== undefined) left.push({ text: presets.current(agent.session.events), accent: 'mode' })
+  if (presets !== undefined) segments.push({ text: presets.current(agent.session.events), accent: 'mode' })
   const planMode = ctx.get('planMode')
-  if (planMode !== undefined && planMode.get(agent).active) left.push({ text: 'plan', accent: 'mode' })
-  return { left, right }
+  if (planMode !== undefined && planMode.get(agent).active) segments.push({ text: 'plan', accent: 'mode' })
+  return { segments }
 }
 
 /** The stored OpenAI GPT credential state, for the /status login row. */
@@ -1057,12 +1086,17 @@ async function runInteractive(ctx: Context, config: Config, exit: (code: number)
       onQueueChange: (queued) => { store.setQueued(queued) },
       onAdopt: (agent, resumed) => {
         if (resumed) {
-          for (const event of agent.session.events) replayEventToStore(event, store)
           const restored = restoreSessionSelection(agent.session)
           if (restored !== undefined) {
             selection = restored
             selectionRef.current = restored
           }
+        }
+        store.push({ kind: 'header', text: `${selection.provider}/${selection.model}` })
+        if (resumed) {
+          for (const event of agent.session.events) replayEventToStore(event, store)
+        } else {
+          for (const hint of ONBOARDING) store.push({ kind: 'info', text: hint })
         }
       },
     },
